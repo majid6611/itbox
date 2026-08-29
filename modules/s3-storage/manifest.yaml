@@ -1,25 +1,30 @@
 id: s3-storage
-name: S3 Storage (Garage)
+name: Backup Storage (Garage)
 description: >-
-  Self-hosted S3-compatible object storage with a web admin console, for
-  backups, app storage, and any tool that expects an S3 API. Uses Garage
-  (Deuxfleurs) — MinIO's community edition was discontinued in 2026.
+  Self-hosted S3-compatible object storage, used as the local backup
+  destination for WebDAV. Headless — there's no dashboard to open, and
+  nothing is exposed publicly. Managed entirely from the Backup panel.
+  Uses Garage (Deuxfleurs); MinIO's community edition was discontinued
+  in 2026 (repo archived), so this platform doesn't use it.
 category: storage
 version: "1.0.0"
 compose_file: docker-compose.yaml
 config_schema:
   - key: default_bucket
-    label: Default bucket name
+    label: Backup bucket name
     type: string
-    default: "company-files"
+    default: "webdav-backup"
+    hidden: true
   - key: access_key
-    label: S3 access key
+    label: Internal S3 access key
     type: secret
     default: ""
+    hidden: true
   - key: secret_key
-    label: S3 secret key
+    label: Internal S3 secret key
     type: secret
     default: ""
+    hidden: true
   - key: rpc_secret
     label: Internal RPC secret
     type: secret
@@ -31,9 +36,4 @@ config_schema:
     default: ""
     hidden: true
 soft_dependencies: []
-routes:
-  - service: garage-webui
-    port: 3909
-  - name: api
-    service: garage
-    port: 3900
+internal_panel: /backup

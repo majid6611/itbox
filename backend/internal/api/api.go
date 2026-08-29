@@ -40,6 +40,9 @@ func NewRouter(s *Server) http.Handler {
 	registerGroups(api, s)
 	registerVpn(api, s)
 	registerSettings(api, s)
+	registerBackup(api, s)
+
+	s.startBackupScheduler(context.Background())
 
 	return router
 }
