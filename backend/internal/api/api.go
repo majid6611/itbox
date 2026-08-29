@@ -20,6 +20,11 @@ type Server struct {
 	Modules  *modules.Manager
 	Registry *modules.Registry
 	DB       *pgxpool.Pool
+
+	// GatewayContainerName is the internal VPN gateway's fixed container
+	// name (see docker-compose.yaml's internal-gateway service) — needed
+	// to `docker exec` its one-time NetBird enrollment.
+	GatewayContainerName string
 }
 
 const sessionCookieName = "itp_session"

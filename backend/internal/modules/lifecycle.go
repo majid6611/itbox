@@ -27,6 +27,11 @@ type Status struct {
 	Config       map[string]string `json:"config"`
 	InstalledAt  *string           `json:"installed_at,omitempty"`
 	ErrorMessage *string           `json:"error_message,omitempty"`
+	Visibility   string            `json:"visibility"` // "public" or "private"
+	// PrivatePort is set only when Visibility is "private" and a port has
+	// actually been allocated (i.e. the module has been routed at least
+	// once since going private) — nil otherwise.
+	PrivatePort *int `json:"private_port,omitempty"`
 }
 
 type Manager struct {
@@ -167,9 +172,13 @@ func (m *Manager) VolumeName(moduleID, volumeKey string) string {
 func (m *Manager) GetInstalled(ctx context.Context, moduleID string) (Status, bool, error) {
 	var s Status
 	var configJSON []byte
-	err := m.db.QueryRow(ctx,
-		`SELECT module_id, status, config, error_message FROM installed_modules WHERE module_id = $1`, moduleID,
-	).Scan(&s.ModuleID, &s.Status, &configJSON, &s.ErrorMessage)
+	err := m.db.QueryRow(ctx, `
+		SELECT im.module_id, im.status, im.config, im.error_message, im.visibility, mpp.port
+		FROM installed_modules im
+		LEFT JOIN module_private_ports mpp ON mpp.module_id = im.module_id
+		WHERE im.module_id = $1
+	`, moduleID,
+	).Scan(&s.ModuleID, &s.Status, &configJSON, &s.ErrorMessage, &s.Visibility, &s.PrivatePort)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return Status{}, false, nil
@@ -182,16 +191,100 @@ func (m *Manager) GetInstalled(ctx context.Context, moduleID string) (Status, bo
 	return s, true, nil
 }
 
-func (m *Manager) routeTargets(moduleID string, routes []Route) []proxy.RouteTarget {
+// routeTargets builds the nginx route list for a module. Only the primary
+// route (Name == "") is ever private — a named route is always some
+// specific secondary thing a module's primary service depends on being
+// reachable (not a thing end users browse to directly), so it always
+// stays public.
+func (m *Manager) routeTargets(ctx context.Context, moduleID string, routes []Route) ([]proxy.RouteTarget, error) {
 	targets := make([]proxy.RouteTarget, 0, len(routes))
 	for _, r := range routes {
-		targets = append(targets, proxy.RouteTarget{
+		t := proxy.RouteTarget{
 			Name:     r.Name,
 			Hostname: m.Hostname(moduleID, r.Name),
 			Upstream: m.upstream(moduleID, r),
-		})
+		}
+		if r.Name == "" {
+			visibility, err := m.Visibility(ctx, moduleID)
+			if err != nil {
+				return nil, err
+			}
+			if visibility == "private" {
+				port, err := m.privatePort(ctx, moduleID)
+				if err != nil {
+					return nil, err
+				}
+				t.PrivatePort = port
+			}
+		}
+		targets = append(targets, t)
 	}
-	return targets
+	return targets, nil
+}
+
+// Visibility returns "public" or "private" for a module's primary route —
+// "private" (the default — see the 0006 migration) means it's reachable
+// only through the internal VPN gateway, not the public internet at all.
+func (m *Manager) Visibility(ctx context.Context, moduleID string) (string, error) {
+	var v string
+	err := m.db.QueryRow(ctx, `SELECT visibility FROM installed_modules WHERE module_id = $1`, moduleID).Scan(&v)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "private", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("load visibility for %s: %w", moduleID, err)
+	}
+	return v, nil
+}
+
+// SetVisibility persists a module's public/private setting and re-applies
+// its nginx route immediately — no reinstall needed, unlike a domain
+// change (there's no separately-generated config baked into the module's
+// own containers to invalidate here, just which vhost nginx writes).
+func (m *Manager) SetVisibility(ctx context.Context, moduleID, visibility string) error {
+	if visibility != "public" && visibility != "private" {
+		return fmt.Errorf("visibility must be \"public\" or \"private\", got %q", visibility)
+	}
+	manifest, ok := m.registry.Get(moduleID)
+	if !ok {
+		return fmt.Errorf("unknown module %q", moduleID)
+	}
+	if _, err := m.db.Exec(ctx, `UPDATE installed_modules SET visibility = $2, updated_at = now() WHERE module_id = $1`, moduleID, visibility); err != nil {
+		return fmt.Errorf("save visibility: %w", err)
+	}
+	if len(manifest.Routes) == 0 {
+		return nil
+	}
+	targets, err := m.routeTargets(ctx, moduleID, manifest.Routes)
+	if err != nil {
+		return err
+	}
+	return m.proxy.SetRoutes(ctx, moduleID, targets)
+}
+
+// privatePort returns this module's fixed port on the internal gateway's
+// address, allocating one (highest existing + 1, starting at 9100) the
+// first time it's needed. Stable for the module's lifetime, not
+// re-allocated on every visibility toggle, so "private" -> "public" ->
+// "private" again doesn't hand out a different port each time.
+func (m *Manager) privatePort(ctx context.Context, moduleID string) (int, error) {
+	var port int
+	err := m.db.QueryRow(ctx, `SELECT port FROM module_private_ports WHERE module_id = $1`, moduleID).Scan(&port)
+	if err == nil {
+		return port, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return 0, fmt.Errorf("load private port for %s: %w", moduleID, err)
+	}
+	err = m.db.QueryRow(ctx, `
+		INSERT INTO module_private_ports (module_id, port)
+		VALUES ($1, (SELECT COALESCE(MAX(port), 9099) + 1 FROM module_private_ports))
+		RETURNING port
+	`, moduleID).Scan(&port)
+	if err != nil {
+		return 0, fmt.Errorf("allocate private port for %s: %w", moduleID, err)
+	}
+	return port, nil
 }
 
 // longOp returns a context detached from the inbound HTTP request, with a
@@ -306,7 +399,11 @@ func (m *Manager) doInstall(ctx context.Context, moduleID string, manifest *Mani
 	}
 
 	if len(manifest.Routes) > 0 {
-		if err := m.proxy.SetRoutes(ctx, moduleID, m.routeTargets(moduleID, manifest.Routes)); err != nil {
+		targets, err := m.routeTargets(ctx, moduleID, manifest.Routes)
+		if err != nil {
+			return fmt.Errorf("route module: %w", err)
+		}
+		if err := m.proxy.SetRoutes(ctx, moduleID, targets); err != nil {
 			return fmt.Errorf("route module: %w", err)
 		}
 	}
@@ -376,7 +473,11 @@ func (m *Manager) Enable(_ context.Context, moduleID string) error {
 	}
 
 	if len(manifest.Routes) > 0 {
-		if err := m.proxy.SetRoutes(ctx, moduleID, m.routeTargets(moduleID, manifest.Routes)); err != nil {
+		targets, err := m.routeTargets(ctx, moduleID, manifest.Routes)
+		if err != nil {
+			return fmt.Errorf("route module: %w", err)
+		}
+		if err := m.proxy.SetRoutes(ctx, moduleID, targets); err != nil {
 			return fmt.Errorf("route module: %w", err)
 		}
 	}
@@ -415,7 +516,11 @@ func (m *Manager) Uninstall(_ context.Context, moduleID string) error {
 // ListStatuses returns the catalog joined with each module's installed
 // status from the database (not_installed if there's no row).
 func (m *Manager) ListStatuses(ctx context.Context) ([]Status, error) {
-	rows, err := m.db.Query(ctx, `SELECT module_id, status, config, error_message FROM installed_modules`)
+	rows, err := m.db.Query(ctx, `
+		SELECT im.module_id, im.status, im.config, im.error_message, im.visibility, mpp.port
+		FROM installed_modules im
+		LEFT JOIN module_private_ports mpp ON mpp.module_id = im.module_id
+	`)
 	if err != nil {
 		return nil, fmt.Errorf("query installed_modules: %w", err)
 	}
@@ -425,7 +530,7 @@ func (m *Manager) ListStatuses(ctx context.Context) ([]Status, error) {
 	for rows.Next() {
 		var s Status
 		var configJSON []byte
-		if err := rows.Scan(&s.ModuleID, &s.Status, &configJSON, &s.ErrorMessage); err != nil {
+		if err := rows.Scan(&s.ModuleID, &s.Status, &configJSON, &s.ErrorMessage, &s.Visibility, &s.PrivatePort); err != nil {
 			return nil, fmt.Errorf("scan installed_modules: %w", err)
 		}
 		if err := json.Unmarshal(configJSON, &s.Config); err != nil {

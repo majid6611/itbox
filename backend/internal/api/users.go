@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 
@@ -90,6 +91,42 @@ func (s *Server) syncWebdavLogin(ctx context.Context, username, password string,
 	volume := s.Modules.VolumeName("fileshare-webdav", "webdav_config")
 	container := s.Modules.ContainerName("fileshare-webdav", "webdav")
 	return webdavfs.SyncUser(ctx, s.Docker, volume, container, username, password, usernames, groupOf, groupNames)
+}
+
+// backfillWebdavFolders waits for a freshly-installed fileshare-webdav to
+// come up, then creates a folder for every LDAP user and group that
+// already existed before the module was installed — see the install
+// handler's comment on why this is needed at all. Best-effort and
+// deliberately doesn't touch WebDAV logins/passwords: we never persist a
+// user's plaintext password after their LDAP account is created, so
+// there's no correct value to backfill a login with — an existing user's
+// login only gets created/repaired the next time something touches their
+// account (password reset, group change), same as before this existed.
+func (s *Server) backfillWebdavFolders(ctx context.Context) {
+	deadline := time.Now().Add(2 * time.Minute)
+	for time.Now().Before(deadline) {
+		status, ok, err := s.Modules.GetInstalled(ctx, "fileshare-webdav")
+		if err == nil && ok && status.Status == "running" {
+			break
+		}
+		time.Sleep(3 * time.Second)
+	}
+
+	dirClient, dirAvailable, err := s.directoryClient(ctx)
+	if err != nil || !dirAvailable {
+		return // no LDAP module, or it errored — nothing to back-fill
+	}
+	usernames, _, groupNames, err := webdavGroupContext(dirClient)
+	if err != nil {
+		log.Printf("webdav folder backfill: list directory: %v", err)
+		return
+	}
+
+	names := append([]string{"shared"}, usernames...)
+	names = append(names, groupNames...)
+	if err := s.ensureWebdavFolders(ctx, names...); err != nil {
+		log.Printf("webdav folder backfill: %v", err)
+	}
 }
 
 // rebuildWebdavRules re-applies folder-access rules for everyone without

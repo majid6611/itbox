@@ -9,9 +9,31 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 )
+
+// safeEnv returns a minimal environment for docker/docker-compose
+// subprocesses — just enough for the CLI to run (PATH, HOME, and
+// DOCKER_HOST/DOCKER_CONFIG if set) — deliberately NOT the backend's own
+// full process environment. Without this, our own env vars (BASE_DOMAIN,
+// DATABASE_URL, ADMIN_PASSWORD, ...) leak into every subprocess call; for
+// `docker compose` specifically this is worse than just a leak — Compose's
+// ${VAR} interpolation prioritizes an inherited shell env var over a
+// project's own .env file, so an updated Settings value (or any module
+// config field whose name happens to collide with one of ours) would
+// silently keep resolving to whatever this container's env said at
+// startup, no matter what gets freshly written to the module's .env.
+func safeEnv() []string {
+	var env []string
+	for _, key := range []string{"PATH", "HOME", "DOCKER_HOST", "DOCKER_CONFIG"} {
+		if v, ok := os.LookupEnv(key); ok {
+			env = append(env, key+"="+v)
+		}
+	}
+	return env
+}
 
 type Client struct{}
 
@@ -40,6 +62,7 @@ func (c *Client) ComposeStatus(ctx context.Context, dir, project string) (string
 	var out bytes.Buffer
 	cmd := exec.CommandContext(ctx, "docker", "compose", "-p", project, "ps", "--status", "running", "-q")
 	cmd.Dir = dir
+	cmd.Env = safeEnv()
 	cmd.Stdout = &out
 	if err := cmd.Run(); err != nil {
 		return "unknown", fmt.Errorf("compose ps: %w", err)
@@ -65,6 +88,7 @@ func (c *Client) ReadVolumeFile(ctx context.Context, volume, path string) (strin
 	var out bytes.Buffer
 	var stderr bytes.Buffer
 	cmd := exec.CommandContext(ctx, "docker", "run", "--rm", "-v", volume+":/target:ro", "busybox", "cat", "/target/"+path)
+	cmd.Env = safeEnv()
 	cmd.Stdout = &out
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
@@ -78,6 +102,7 @@ func (c *Client) ReadVolumeFile(ctx context.Context, volume, path string) (strin
 func (c *Client) WriteVolumeFile(ctx context.Context, volume, path, content string) error {
 	var stderr bytes.Buffer
 	cmd := exec.CommandContext(ctx, "docker", "run", "--rm", "-i", "-v", volume+":/target", "busybox", "sh", "-c", "cat > /target/"+path)
+	cmd.Env = safeEnv()
 	cmd.Stdin = strings.NewReader(content)
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
@@ -92,11 +117,25 @@ func (c *Client) RestartContainer(ctx context.Context, containerName string) err
 	return c.run(ctx, "", "restart", containerName)
 }
 
+// Exec runs a command inside a running container and returns its combined
+// output — for one-off commands like the internal gateway's `netbird up`,
+// where there's no other API to drive it.
+func (c *Client) Exec(ctx context.Context, containerName string, args ...string) (string, error) {
+	cmd := exec.CommandContext(ctx, "docker", append([]string{"exec", containerName}, args...)...)
+	cmd.Env = safeEnv()
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return string(out), fmt.Errorf("docker exec %s %v: %w: %s", containerName, args, err, string(out))
+	}
+	return string(out), nil
+}
+
 func (c *Client) run(ctx context.Context, dir string, args ...string) error {
 	cmd := exec.CommandContext(ctx, "docker", args...)
 	if dir != "" {
 		cmd.Dir = dir
 	}
+	cmd.Env = safeEnv()
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {

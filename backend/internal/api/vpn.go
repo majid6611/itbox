@@ -13,10 +13,10 @@ import (
 
 // bootstrapNetbird runs once, right after vpn-netbird's containers start.
 // It's the one-time setup NetBird's API requires that config.yaml can't
-// do: create the first account (to get a management token) and register
-// our Dex sidecar as the login connector. Polls because the container can
-// take a couple of minutes on first boot (it downloads a GeoIP database
-// before its HTTP server starts listening).
+// do: create the first account, to get a management token our own panel
+// uses for everything else (setup keys, peer list, routes). Polls because
+// the container can take a couple of minutes on first boot (it downloads
+// a GeoIP database before its HTTP server starts listening).
 func (s *Server) bootstrapNetbird(ctx context.Context) {
 	deadline := time.Now().Add(5 * time.Minute)
 	var status struct{ Config map[string]string }
@@ -50,13 +50,6 @@ func (s *Server) bootstrapNetbird(ctx context.Context) {
 		return
 	}
 	nb.SetToken(pat)
-
-	dexIssuer := "http://" + s.Modules.Hostname("vpn-netbird", "dex") + ":8000"
-	if err := nb.RegisterIdentityProvider(ctx, "Company LDAP", dexIssuer, "netbird", status.Config["dex_client_secret"]); err != nil {
-		log.Printf("netbird bootstrap: register identity provider: %v", err)
-		// Still persist the token below — the admin can be told to retry
-		// registration, but losing the token entirely means starting over.
-	}
 
 	_, err := s.DB.Exec(ctx,
 		`UPDATE installed_modules SET config = config || jsonb_build_object('management_pat', $2::text) WHERE module_id = $1`,
@@ -111,6 +104,13 @@ type ListVpnUsersOutput struct {
 		// enable/download are refused until a real domain is set.
 		DomainConfigured bool         `json:"domain_configured"`
 		Users            []VpnUserOut `json:"users"`
+		// Devices is every device NetBird currently knows about — NOT
+		// matched to a specific user above. Setup keys are reusable (one
+		// user's key can enroll several devices) and NetBird doesn't
+		// record which key created a peer, so there's no reliable way to
+		// attribute a device to a company user; this is intentionally a
+		// flat "what's connected right now" list instead.
+		Devices []netbird.Peer `json:"devices"`
 	}
 }
 
@@ -149,7 +149,7 @@ func registerVpn(api huma.API, s *Server) {
 		if err != nil {
 			return nil, huma.Error500InternalServerError("check identity module", err)
 		}
-		_, nbAvailable, err := s.netbirdClient(ctx)
+		nb, nbAvailable, err := s.netbirdClient(ctx)
 		if err != nil {
 			return nil, huma.Error500InternalServerError("check vpn module", err)
 		}
@@ -158,6 +158,12 @@ func registerVpn(api huma.API, s *Server) {
 		if !out.Body.Available {
 			return out, nil
 		}
+
+		devices, err := nb.ListPeers(ctx)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("list connected devices", err)
+		}
+		out.Body.Devices = devices
 
 		users, err := dirClient.ListUsers()
 		if err != nil {

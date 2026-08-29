@@ -50,11 +50,12 @@ func main() {
 	}
 
 	router := api.NewRouter(&api.Server{
-		Auth:     authService,
-		Docker:   dockerClient,
-		Modules:  moduleManager,
-		Registry: registry,
-		DB:       pool,
+		Auth:                 authService,
+		Docker:               dockerClient,
+		Modules:              moduleManager,
+		Registry:             registry,
+		DB:                   pool,
+		GatewayContainerName: cfg.GatewayContainerName,
 	})
 
 	log.Printf("listening on %s", cfg.ListenAddr)

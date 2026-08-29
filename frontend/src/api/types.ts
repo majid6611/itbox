@@ -16,6 +16,12 @@ export interface SoftDependency {
   integration: string
 }
 
+export interface ModuleRoute {
+  name?: string
+  service: string
+  port: number
+}
+
 export interface Manifest {
   id: string
   name: string
@@ -25,6 +31,7 @@ export interface Manifest {
   available: boolean
   config_schema: ConfigField[]
   soft_dependencies: SoftDependency[]
+  routes?: ModuleRoute[]
   internal_panel?: string
 }
 
@@ -36,6 +43,8 @@ export interface ModuleStatus {
   config: Record<string, string>
   installed_at?: string
   error_message?: string
+  visibility: 'public' | 'private'
+  private_port?: number
 }
 
 export interface ModulesResponse {
@@ -83,10 +92,19 @@ export interface VpnUser {
   has_access: boolean
 }
 
+export interface VpnDevice {
+  name: string
+  ip: string
+  connected: boolean
+  last_seen: string
+  os: string
+}
+
 export interface VpnUsersResponse {
   available: boolean
   domain_configured: boolean
   users: VpnUser[]
+  devices: VpnDevice[]
 }
 
 export interface EnableVpnResponse {

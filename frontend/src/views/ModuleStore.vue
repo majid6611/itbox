@@ -14,6 +14,28 @@ function statusFor(id: string) {
   return modules.statuses[id]?.status ?? 'not_installed'
 }
 
+// Nginx's fixed address on the internal VPN gateway's advertised route —
+// see backend/internal/proxy/nginx.go's internalGatewayIP. Only means
+// anything to someone already connected to the platform's VPN.
+const INTERNAL_GATEWAY_IP = '172.28.0.2'
+
+function hasPrimaryRoute(m: Manifest) {
+  return m.routes?.some((r) => !r.name) ?? false
+}
+
+function isPrivate(id: string) {
+  return modules.statuses[id]?.visibility === 'private'
+}
+
+async function toggleVisibility(id: string) {
+  busy[id] = true
+  try {
+    await modules.setVisibility(id, isPrivate(id) ? 'public' : 'private')
+  } finally {
+    busy[id] = false
+  }
+}
+
 function visibleFields(m: Manifest) {
   return m.config_schema.filter((f) => !f.hidden)
 }
@@ -109,6 +131,19 @@ async function run(id: string, action: 'enable' | 'disable' | 'uninstall') {
               <a :href="linkUrl(l.hostname)" target="_blank" rel="noopener">{{ l.name || 'Open' }}</a>
             </li>
           </ul>
+
+          <div v-if="statusFor(m.id) === 'running' && hasPrimaryRoute(m)" class="visibility">
+            <span :class="['badge', isPrivate(m.id) ? 'private' : 'public']">
+              {{ isPrivate(m.id) ? 'Private (VPN only)' : 'Public (on the internet)' }}
+            </span>
+            <button :disabled="busy[m.id]" @click="toggleVisibility(m.id)">
+              {{ isPrivate(m.id) ? 'Make public' : 'Make private' }}
+            </button>
+            <p v-if="isPrivate(m.id) && modules.statuses[m.id]?.private_port" class="hint">
+              Reachable once connected to the VPN at
+              <code>{{ INTERNAL_GATEWAY_IP }}:{{ modules.statuses[m.id]?.private_port }}</code>
+            </p>
+          </div>
         </div>
       </div>
     </div>
@@ -190,5 +225,35 @@ async function run(id: string, action: 'enable' | 'disable' | 'uninstall') {
   margin: 0;
   padding: 0;
   width: 100%;
+}
+.visibility {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid #333;
+}
+.visibility .hint {
+  width: 100%;
+  font-size: 0.85rem;
+  opacity: 0.8;
+  margin: 0;
+}
+.visibility .hint code {
+  font-family: monospace;
+  background: rgba(255, 255, 255, 0.08);
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+}
+.badge.private {
+  background: #555;
+  color: white;
+}
+.badge.public {
+  background: #b08800;
+  color: white;
 }
 </style>
