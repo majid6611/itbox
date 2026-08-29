@@ -1,0 +1,15 @@
+id: hello-world
+name: Hello World
+description: Proof-of-concept module used to validate install/enable/disable/uninstall end to end.
+category: demo
+version: "1.0.0"
+compose_file: docker-compose.yaml
+config_schema:
+  - key: greeting
+    label: Greeting message
+    type: string
+    default: "Hello from your new platform!"
+soft_dependencies: []
+routes:
+  - service: web
+    port: 80

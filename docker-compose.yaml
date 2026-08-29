@@ -1,0 +1,75 @@
+networks:
+  default: {}
+  # Modules attach their web-facing service to this network (as an external
+  # network, see modules/hello-world/docker-compose.yaml) so the edge nginx
+  # can reach them by container name.
+  edge:
+    name: it-platform-edge
+
+services:
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: itplatform-nginx
+    restart: unless-stopped
+    environment:
+      BASE_DOMAIN: ${BASE_DOMAIN}
+    ports:
+      - "8000:80"
+    volumes:
+      - ./nginx/templates:/etc/nginx/templates:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d
+    networks:
+      - default
+      - edge
+    depends_on:
+      - frontend
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: itplatform
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: itplatform
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U itplatform"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    networks:
+      - default
+      - edge
+    environment:
+      LISTEN_ADDR: ":8080"
+      DATABASE_URL: postgres://itplatform:${POSTGRES_PASSWORD}@postgres:5432/itplatform?sslmode=disable
+      MODULES_DIR: /app/modules
+      DATA_DIR: /app/data/modules
+      ADMIN_EMAIL: ${ADMIN_EMAIL}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      SESSION_SECRET: ${SESSION_SECRET}
+      BASE_DOMAIN: ${BASE_DOMAIN}
+      NGINX_CONF_DIR: /app/nginx/conf.d
+      NGINX_CONTAINER_NAME: itplatform-nginx
+    volumes:
+      - ./modules:/app/modules:ro
+      - ./data/modules:/app/data/modules
+      - ./nginx/conf.d:/app/nginx/conf.d
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:

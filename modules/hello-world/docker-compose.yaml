@@ -1,0 +1,15 @@
+networks:
+  edge:
+    external: true
+    name: it-platform-edge
+
+services:
+  web:
+    image: nginx:alpine
+    restart: unless-stopped
+    environment:
+      GREETING: ${greeting}
+    command: >
+      sh -c "echo \"<html><body><h1>$$GREETING</h1></body></html>\" > /usr/share/nginx/html/index.html && nginx -g 'daemon off;'"
+    networks:
+      - edge

@@ -1,0 +1,9 @@
+.env
+data/modules/*
+!data/modules/.gitkeep
+nginx/conf.d/*
+!nginx/conf.d/.gitkeep
+node_modules/
+dist/
+frontend/dist/
+*.tsbuildinfo

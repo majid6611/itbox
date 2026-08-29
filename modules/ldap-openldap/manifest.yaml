@@ -1,0 +1,25 @@
+id: ldap-openldap
+name: Identity (OpenLDAP)
+description: >-
+  Central user directory (LDAP). Users and groups are managed from this
+  platform's own Users panel — no separate admin UI to learn.
+category: identity
+version: "1.0.0"
+compose_file: docker-compose.yaml
+config_schema:
+  - key: org_name
+    label: Organization name
+    type: string
+    default: "Company"
+  - key: base_dn
+    label: Base DN
+    type: string
+    default: "dc=company,dc=local"
+  - key: admin_password
+    label: Internal admin bind password
+    type: secret
+    default: ""
+    hidden: true
+soft_dependencies: []
+routes: []
+internal_panel: /users

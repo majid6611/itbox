@@ -1,0 +1,18 @@
+# Static route for the main platform UI. Per-module routes are written
+# by the backend directly into /etc/nginx/conf.d/<module-id>.conf at
+# install time (see backend/internal/proxy).
+server {
+    listen 80;
+    server_name ${BASE_DOMAIN};
+
+    location / {
+        proxy_pass http://frontend:80;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        # Module install/enable can take minutes (large image pulls on
+        # first run) — matches the backend's own operation timeout.
+        proxy_read_timeout 600s;
+        proxy_send_timeout 600s;
+    }
+}

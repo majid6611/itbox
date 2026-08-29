@@ -1,0 +1,146 @@
+networks:
+  default: {}
+  edge:
+    external: true
+    name: it-platform-edge
+
+services:
+  # Neither netbird-server nor dex has a shell of its own, so a tiny
+  # busybox init step writes each one's config into a shared named volume
+  # before the real container starts — same pattern used for Garage and
+  # WebDAV elsewhere in this platform.
+  netbird-config:
+    image: busybox:latest
+    restart: "no"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        cat > /config/config.yaml <<EOF
+        server:
+          listenAddress: ":80"
+          # Published straight to the host on its own port (8090), bypassing
+          # the edge nginx entirely — nginx can't multiplex this: the actual
+          # client protocol here is native gRPC (Management/Signal), and
+          # plaintext HTTP/2 (h2c) protocol detection is a per-listen-socket
+          # thing in nginx, not per-vhost, so it can't share port 8000 with
+          # every other module's plain HTTP/1.1 vhost. A dedicated port with
+          # a raw TCP passthrough sidesteps that — same reason STUN below
+          # gets its own published port instead of going through nginx too.
+          exposedAddress: "http://${MODULE_ID}.${BASE_DOMAIN}:8090"
+          dataDir: "/var/lib/netbird/"
+          store:
+            engine: "sqlite"
+            encryptionKey: "${store_encryption_key}"
+          stunPorts: [3478]
+          authSecret: "${relay_auth_secret}"
+          auth:
+            issuer: "http://${MODULE_ID}.${BASE_DOMAIN}:8090/oauth2"
+            localAuthDisabled: false
+            dashboardRedirectURIs:
+              - "http://${MODULE_ID}.${BASE_DOMAIN}:8090/nb-auth"
+              - "http://${MODULE_ID}.${BASE_DOMAIN}:8090/nb-silent-auth"
+            cliRedirectURIs:
+              - "http://localhost:53000/"
+            sessionCookieEncryptionKey: "${session_cookie_key}"
+        EOF
+    volumes:
+      - netbird_config:/config
+
+  dex-config:
+    image: busybox:latest
+    restart: "no"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        cat > /config/config.yaml <<EOF
+        issuer: http://dex.${MODULE_ID}.${BASE_DOMAIN}:8000
+        storage:
+          type: sqlite3
+          config:
+            file: /var/dex/dex.db
+        web:
+          http: 0.0.0.0:5556
+        connectors:
+        - type: ldap
+          name: OpenLDAP
+          id: ldap
+          config:
+            host: itp-ldap-openldap-openldap-1:389
+            insecureNoSSL: true
+            bindDN: uid=admin,${ldap_base_dn}
+            bindPW: "${ldap_bind_password}"
+            usernamePrompt: Username
+            userSearch:
+              baseDN: ou=people,${ldap_base_dn}
+              filter: "(objectClass=inetOrgPerson)"
+              username: uid
+              idAttr: DN
+              emailAttr: mail
+              nameAttr: cn
+            groupSearch:
+              baseDN: ou=groups,${ldap_base_dn}
+              filter: "(objectClass=groupOfNames)"
+              userMatchers:
+                - userAttr: DN
+                  groupAttr: member
+              nameAttr: cn
+        staticClients:
+        - id: netbird
+          secret: "${dex_client_secret}"
+          redirectURIs:
+            - "http://${MODULE_ID}.${BASE_DOMAIN}:8090/oauth2/callback"
+          name: "NetBird"
+        EOF
+    volumes:
+      - dex_config:/config
+
+  netbird-server:
+    image: netbirdio/netbird-server@sha256:e71f39cefcd90956d818dc4179084fd47d39f0741d1211b818ec640766b5794d
+    restart: unless-stopped
+    command: ["--config", "/etc/netbird/config.yaml"]
+    environment:
+      NB_SETUP_PAT_ENABLED: "true"
+    volumes:
+      - netbird_config:/etc/netbird
+      - netbird_data:/var/lib/netbird
+    ports:
+      - "3478:3478/udp"
+      - "8090:80"
+    # The exposed hostnames (${MODULE_ID}.${BASE_DOMAIN} / dex.${MODULE_ID}.${BASE_DOMAIN})
+    # only resolve to the host's own port-forwards from the *host* itself.
+    # From inside this container they'd resolve to nothing, but
+    # netbird-server needs to reach its own issuer (now on the 8090
+    # passthrough above) and Dex's issuer (still behind the edge nginx on
+    # 8000) at those exact hostnames — for OIDC discovery + token
+    # validation to line up with what the client uses. Routing them at
+    # the host's own gateway IP reaches the same host port-forwards our
+    # own requests use.
+    extra_hosts:
+      - "${MODULE_ID}.${BASE_DOMAIN}:host-gateway"
+      - "dex.${MODULE_ID}.${BASE_DOMAIN}:host-gateway"
+    depends_on:
+      netbird-config:
+        condition: service_completed_successfully
+    networks:
+      - default
+      - edge
+
+  dex:
+    image: dexidp/dex@sha256:af9469509350ff3f6ca70127175a58e5ab085b9d18740fa4a590d9f03f0a026b
+    restart: unless-stopped
+    command: ["dex", "serve", "/etc/dex/config.yaml"]
+    volumes:
+      - dex_config:/etc/dex
+      - dex_data:/var/dex
+    depends_on:
+      dex-config:
+        condition: service_completed_successfully
+    networks:
+      - default
+      - edge
+
+volumes:
+  netbird_config:
+  netbird_data:
+  dex_config:
+  dex_data:

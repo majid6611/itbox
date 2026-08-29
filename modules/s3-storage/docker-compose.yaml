@@ -1,0 +1,71 @@
+networks:
+  default: {}
+  edge:
+    external: true
+    name: it-platform-edge
+
+services:
+  # dxflrs/garage has no shell of its own, so a tiny busybox init step
+  # writes garage.toml into a shared named volume before the real
+  # container starts, instead of trying to generate it in-place.
+  garage-config:
+    image: busybox:latest
+    restart: "no"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        cat > /etc/garage.toml <<EOF
+        metadata_dir = "/data/meta"
+        data_dir = "/data/data"
+        db_engine = "sqlite"
+        replication_factor = 1
+
+        rpc_bind_addr = "[::]:3901"
+        rpc_public_addr = "garage:3901"
+        rpc_secret = "${rpc_secret}"
+
+        [s3_api]
+        s3_region = "garage"
+        api_bind_addr = "[::]:3900"
+
+        [admin]
+        api_bind_addr = "[::]:3903"
+        admin_token = "${admin_token}"
+        EOF
+    volumes:
+      - garage_config:/etc
+
+  garage:
+    image: dxflrs/garage:v2.3.0
+    restart: unless-stopped
+    command: ["/garage", "server", "--single-node", "--default-bucket"]
+    environment:
+      GARAGE_DEFAULT_ACCESS_KEY: ${access_key}
+      GARAGE_DEFAULT_SECRET_KEY: ${secret_key}
+      GARAGE_DEFAULT_BUCKET: ${default_bucket}
+    volumes:
+      - garage_config:/etc
+      - garage_data:/data
+    depends_on:
+      garage-config:
+        condition: service_completed_successfully
+    networks:
+      - default
+      - edge
+
+  garage-webui:
+    image: khairul169/garage-webui:latest
+    restart: unless-stopped
+    environment:
+      API_BASE_URL: http://garage:3903
+      API_ADMIN_KEY: ${admin_token}
+      S3_ENDPOINT_URL: http://garage:3900
+    depends_on:
+      - garage
+    networks:
+      - default
+      - edge
+
+volumes:
+  garage_config:
+  garage_data:

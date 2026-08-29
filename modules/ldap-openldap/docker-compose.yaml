@@ -1,0 +1,24 @@
+networks:
+  default: {}
+  edge:
+    external: true
+    name: it-platform-edge
+
+services:
+  openldap:
+    image: vegardit/openldap:2.6.10
+    restart: unless-stopped
+    environment:
+      LDAP_INIT_ORG_DN: ${base_dn}
+      LDAP_INIT_ORG_NAME: ${org_name}
+      LDAP_INIT_ROOT_USER_PW: ${admin_password}
+    volumes:
+      - openldap_data:/var/lib/ldap
+      - openldap_config:/etc/ldap/slapd.d
+    networks:
+      - default
+      - edge
+
+volumes:
+  openldap_data:
+  openldap_config:

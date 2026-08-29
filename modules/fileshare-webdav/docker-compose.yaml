@@ -1,0 +1,50 @@
+networks:
+  default: {}
+  edge:
+    external: true
+    name: it-platform-edge
+
+services:
+  # hacdias/webdav has no shell of its own, so (as with the Garage
+  # module) a tiny busybox init step writes the config into a shared
+  # named volume before the real container starts.
+  webdav-config:
+    image: busybox:latest
+    restart: "no"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        cat > /config/config.yml <<EOF
+        address: 0.0.0.0
+        port: 6065
+        tls: false
+        prefix: /
+        behindProxy: true
+        directory: /data
+        permissions: R
+
+        users:
+          - username: ${admin_username}
+            password: ${admin_password}
+            permissions: CRUD
+        EOF
+    volumes:
+      - webdav_config:/config
+
+  webdav:
+    image: ghcr.io/hacdias/webdav:latest
+    restart: unless-stopped
+    command: ["-c", "/config/config.yml"]
+    volumes:
+      - webdav_config:/config
+      - webdav_data:/data
+    depends_on:
+      webdav-config:
+        condition: service_completed_successfully
+    networks:
+      - default
+      - edge
+
+volumes:
+  webdav_config:
+  webdav_data:

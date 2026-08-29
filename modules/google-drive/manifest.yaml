@@ -1,0 +1,9 @@
+id: google-drive
+name: Google Drive Sync
+description: >-
+  Two-way sync between company Google Drive and local/S3 storage (via
+  rclone). Coming soon.
+category: storage
+version: "0.0.0"
+config_schema: []
+soft_dependencies: []

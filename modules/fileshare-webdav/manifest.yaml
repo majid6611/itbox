@@ -1,0 +1,24 @@
+id: fileshare-webdav
+name: File Share (WebDAV)
+description: >-
+  Network file sharing over WebDAV — mount as a drive in Windows Explorer,
+  macOS Finder, or Linux file managers. Runs over plain HTTP(S) so it works
+  the same on the LAN or remotely, unlike SMB.
+category: storage
+version: "1.0.0"
+compose_file: docker-compose.yaml
+config_schema:
+  - key: admin_username
+    label: Admin username
+    type: string
+    default: "admin"
+  - key: admin_password
+    label: Admin password
+    type: secret
+    default: ""
+soft_dependencies:
+  - id: ldap-openldap
+    integration: sso
+routes:
+  - service: webdav
+    port: 6065
