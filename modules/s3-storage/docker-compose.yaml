@@ -35,6 +35,14 @@ services:
     volumes:
       - garage_config:/etc
 
+  # --single-node auto-creates a working cluster layout by itself (no
+  # manual `garage layout assign/apply` dance needed — that's only
+  # required on older versions or real multi-node clusters).
+  # --default-bucket creates the bucket + access key from the env vars
+  # below at startup, so there's no post-install bootstrap API call
+  # needed either (unlike NetBird, which needs one) — the values we
+  # generate at install time (config_schema secrets) are already the
+  # real, live credentials.
   garage:
     image: dxflrs/garage:v2.3.0
     restart: unless-stopped
@@ -49,19 +57,6 @@ services:
     depends_on:
       garage-config:
         condition: service_completed_successfully
-    networks:
-      - default
-      - edge
-
-  garage-webui:
-    image: khairul169/garage-webui:latest
-    restart: unless-stopped
-    environment:
-      API_BASE_URL: http://garage:3903
-      API_ADMIN_KEY: ${admin_token}
-      S3_ENDPOINT_URL: http://garage:3900
-    depends_on:
-      - garage
     networks:
       - default
       - edge

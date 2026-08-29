@@ -6,6 +6,7 @@ import ModuleStore from '../views/ModuleStore.vue'
 import Users from '../views/Users.vue'
 import Vpn from '../views/Vpn.vue'
 import Settings from '../views/Settings.vue'
+import Backup from '../views/Backup.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -16,6 +17,7 @@ const router = createRouter({
     { path: '/users', name: 'users', component: Users },
     { path: '/vpn', name: 'vpn', component: Vpn },
     { path: '/settings', name: 'settings', component: Settings },
+    { path: '/backup', name: 'backup', component: Backup },
   ],
 })
 

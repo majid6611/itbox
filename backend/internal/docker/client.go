@@ -117,6 +117,38 @@ func (c *Client) RestartContainer(ctx context.Context, containerName string) err
 	return c.run(ctx, "", "restart", containerName)
 }
 
+// RunRcloneCopy runs `rclone copy` (never `sync`) in a throwaway
+// container, mounting volume at /data — deliberately `copy`, not `sync`:
+// sync mirrors deletions, so a file someone deleted from WebDAV would be
+// deleted from the backup on the very next run too, defeating the most
+// common reason to want a backup at all (recovering something that was
+// accidentally deleted, not just full data loss). Works for both
+// directions: backup mounts read-only and copies /data -> a bucket path;
+// restore mounts read-write and copies a bucket path -> /data. env
+// drives rclone's remote config (no config file needed) — identical
+// either way for our own Garage bucket or a real AWS one. network lets
+// it resolve internal container addresses like Garage's, needed for a
+// local destination but harmless for a real AWS one too.
+func (c *Client) RunRcloneCopy(ctx context.Context, volume string, volumeWritable bool, network string, env map[string]string, src, dst string) (string, error) {
+	mode := ":ro"
+	if volumeWritable {
+		mode = ""
+	}
+	args := []string{"run", "--rm", "-v", volume + ":/data" + mode, "--network", network}
+	for k, v := range env {
+		args = append(args, "-e", k+"="+v)
+	}
+	args = append(args, "rclone/rclone:latest", "copy", src, dst, "-v")
+
+	cmd := exec.CommandContext(ctx, "docker", args...)
+	cmd.Env = safeEnv()
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return string(out), fmt.Errorf("rclone copy: %w: %s", err, string(out))
+	}
+	return string(out), nil
+}
+
 // Exec runs a command inside a running container and returns its combined
 // output — for one-off commands like the internal gateway's `netbird up`,
 // where there's no other API to drive it.

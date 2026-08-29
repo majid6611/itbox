@@ -115,3 +115,20 @@ export interface EnableVpnResponse {
 export interface SettingsResponse {
   base_domain: string
 }
+
+export interface BackupConfig {
+  destination: 'local' | 'aws'
+  aws_access_key_id: string
+  aws_secret_access_key: string
+  aws_bucket: string
+  aws_region: string
+  schedule: 'off' | 'daily' | 'weekly'
+}
+
+export interface BackupRun {
+  kind: 'backup' | 'restore'
+  started_at: string
+  finished_at?: string
+  status: 'running' | 'success' | 'error'
+  error_message?: string
+}
