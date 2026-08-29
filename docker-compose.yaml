@@ -2,9 +2,14 @@ networks:
   default: {}
   # Modules attach their web-facing service to this network (as an external
   # network, see modules/hello-world/docker-compose.yaml) so the edge nginx
-  # can reach them by container name.
+  # can reach them by container name. Fixed subnet so nginx can be given a
+  # static IP below — the internal gateway (see internal-gateway/) advertises
+  # that one address as a NetBird route, and a route needs a stable target.
   edge:
     name: it-platform-edge
+    ipam:
+      config:
+        - subnet: 10.201.28.0/24
 
 services:
   nginx:
@@ -19,8 +24,12 @@ services:
       - ./nginx/templates:/etc/nginx/templates:ro
       - ./nginx/conf.d:/etc/nginx/conf.d
     networks:
-      - default
-      - edge
+      edge:
+        # Fixed, not Docker's next-available assignment — the internal
+        # gateway advertises this exact address as a NetBird route, so it
+        # has to stay put across restarts/recreates.
+        ipv4_address: 10.201.28.2
+      default: {}
     depends_on:
       - frontend
 
@@ -43,8 +52,13 @@ services:
     build: ./backend
     restart: unless-stopped
     networks:
-      - default
-      - edge
+      default: {}
+      edge:
+        # Pinned so it can never race nginx (.2) or internal-gateway (.4)
+        # for their addresses — Docker hands out .2 to whichever
+        # unreserved container starts first, and that's happened to be
+        # each of the other two on different deploys.
+        ipv4_address: 10.201.28.3
     environment:
       LISTEN_ADDR: ":8080"
       DATABASE_URL: postgres://itplatform:${POSTGRES_PASSWORD}@postgres:5432/itplatform?sslmode=disable
@@ -56,6 +70,7 @@ services:
       BASE_DOMAIN: ${BASE_DOMAIN}
       NGINX_CONF_DIR: /app/nginx/conf.d
       NGINX_CONTAINER_NAME: itplatform-nginx
+      GATEWAY_CONTAINER_NAME: itplatform-internal-gateway
     volumes:
       - ./modules:/app/modules:ro
       - ./data/modules:/app/data/modules
@@ -71,5 +86,47 @@ services:
     depends_on:
       - backend
 
+  # The one always-on NetBird client that makes "private" modules reachable
+  # over the VPN at all. It enrolls itself (see backend's
+  # bootstrapInternalGateway) and then tells NetBird "route traffic for
+  # nginx's address (10.201.28.2) through me" — nothing else about it is
+  # module-specific; every private module just gets its own port on that
+  # one advertised address. Not a "module" in the platform's own sense
+  # (nothing to install/uninstall from the panel) — it's core
+  # infrastructure, alongside nginx and postgres.
+  internal-gateway:
+    image: netbirdio/netbird:latest
+    container_name: itplatform-internal-gateway
+    hostname: itplatform-internal-gateway
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+      - SYS_ADMIN
+    devices:
+      - /dev/net/tun
+    sysctls:
+      - net.ipv4.ip_forward=1
+    entrypoint: /bin/bash
+    command: ["-c", "netbird service run & wait"]
+    # Same fix as modules/vpn-netbird/docker-compose.yaml's own extra_hosts:
+    # this container reaches the VPN server at its public hostname:port
+    # (same as any real client would, not an internal container address —
+    # the server tells every peer, including this one, to use its public
+    # exposedAddress for Signal regardless of how Management was reached),
+    # and when BASE_DOMAIN is "localhost" that hostname is otherwise magic
+    # loopback (RFC 6761) and resolves to this container's own empty
+    # loopback instead of the host's published port.
+    extra_hosts:
+      - "vpn-netbird.${BASE_DOMAIN}:host-gateway"
+    volumes:
+      - internal_gateway_data:/var/lib/netbird
+    networks:
+      edge:
+        # Fixed too, same reason as nginx's — and specifically NOT .2:
+        # Docker's IPAM hands out .2 to whichever container starts first
+        # if it isn't reserved, and it raced nginx for it here.
+        ipv4_address: 10.201.28.4
+
 volumes:
   postgres_data:
+  internal_gateway_data:

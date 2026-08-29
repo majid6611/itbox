@@ -3,9 +3,10 @@ name: VPN (Netbird)
 description: >-
   Self-hosted WireGuard mesh VPN. Give a company user access with one
   click and hand them a setup file — no passwords or logins to configure,
-  just paste a code into the VPN app once. Requires the Identity
-  (OpenLDAP) module. Managed from this platform's own panel — Netbird's
-  own dashboard is never installed.
+  just paste a code into the VPN app once. Works on its own, but the
+  Identity (OpenLDAP) module is what gives you a list of company users to
+  grant access to. Managed from this platform's own panel — Netbird's own
+  dashboard is never installed.
 category: networking
 version: "1.0.0"
 compose_file: docker-compose.yaml
@@ -30,39 +31,17 @@ config_schema:
     type: secret_base64
     default: ""
     hidden: true
-  - key: dex_client_secret
-    label: Internal OIDC bridge secret
-    type: secret
-    default: ""
-    hidden: true
   - key: relay_auth_secret
     label: Internal relay auth secret
     type: secret
     default: ""
     hidden: true
-  # Injected by the backend at install time from the ldap-openldap
-  # module's own stored config — not asked for here. See
-  # internal/api/modules.go's vpn-netbird special case.
-  - key: ldap_base_dn
-    label: Internal LDAP base DN
-    type: string
-    default: ""
-    hidden: true
-  - key: ldap_bind_password
-    label: Internal LDAP bind password
-    type: secret
-    default: ""
-    hidden: true
 soft_dependencies:
   - id: ldap-openldap
-    integration: sso
+    integration: directory
 internal_panel: /vpn
-# netbird-server itself is NOT routed through the edge nginx — its client
-# protocol (gRPC for Management/Signal) can't share nginx's shared port 80
-# with every other module's plain HTTP/1.1 vhost (see docker-compose.yaml's
-# comment on the 8090 port publish). Only Dex, which stays plain HTTP, goes
-# through the edge.
-routes:
-  - name: dex
-    service: dex
-    port: 5556
+# netbird-server itself is NOT routed through the edge nginx at all — its
+# client protocol (gRPC for Management/Signal) can't share nginx's shared
+# port 80 with every other module's plain HTTP/1.1 vhost (see
+# docker-compose.yaml's comment on the 8090 port publish), so it gets a
+# direct host port instead. Nothing else in this module needs a route.

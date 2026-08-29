@@ -27,12 +27,30 @@ func NewManager(dockerClient nginxReloader, confDir, containerName string) *Mana
 	return &Manager{docker: dockerClient, confDir: confDir, containerName: containerName}
 }
 
+// internalGatewayIP is nginx's own fixed address on the edge network (see
+// docker-compose.yaml's edge network IPAM config) — the one address the
+// internal gateway advertises as a NetBird route, so a private route's
+// address needs to be reachable there specifically, not wherever Docker
+// happens to assign nginx next time it's recreated.
+const internalGatewayIP = "10.201.28.2"
+
 // RouteTarget is one hostname->upstream mapping to write for a module.
 // Name is "" for a module's primary route.
+//
+// PrivatePort is 0 for a normal public route (reachable at Hostname on the
+// shared public port). A non-zero value instead makes this route private:
+// reachable only at internalGatewayIP:PrivatePort, which the public
+// internet was never given a path to and only VPN-connected devices can
+// reach (via the internal gateway's advertised route) — see
+// modules/README or the Settings/module-visibility docs for the full
+// picture. Because there's no DNS for VPN clients to tell modules apart
+// by hostname the way the public path does, a private route gets its own
+// dedicated port instead of sharing one via Host-header routing.
 type RouteTarget struct {
-	Name     string
-	Hostname string
-	Upstream string
+	Name        string
+	Hostname    string
+	Upstream    string
+	PrivatePort int
 }
 
 func (m *Manager) confPath(moduleID, routeName string) string {
@@ -54,14 +72,37 @@ func (m *Manager) confPath(moduleID, routeName string) string {
 // instead — see modules/vpn-netbird/docker-compose.yaml).
 func (m *Manager) SetRoutes(ctx context.Context, moduleID string, routes []RouteTarget) error {
 	for _, r := range routes {
-		// The upstream is resolved lazily via a variable + Docker's embedded
-		// DNS (127.0.0.11), not baked into a literal proxy_pass hostname. A
-		// literal hostname is resolved once at config load, and nginx refuses
-		// to start at all if it doesn't resolve — so a single stale vhost
-		// (module container removed outside the API) would take down routing
-		// for every module, including the platform UI. The lazy form just
-		// 502s that one route instead.
-		conf := fmt.Sprintf(`server {
+		var conf string
+		if r.PrivatePort != 0 {
+			// Bound to nginx's own fixed edge-network IP, not 0.0.0.0 — this
+			// listen address is never published to the host, so it's simply
+			// absent from the public internet, not just access-controlled.
+			// No server_name/Host-header matching: the port itself is what
+			// picks the module, since a VPN client has no DNS to resolve a
+			// friendly hostname to this address in the first place.
+			conf = fmt.Sprintf(`server {
+    listen %s:%d;
+
+    resolver 127.0.0.11 valid=10s;
+
+    location / {
+        set $upstream "http://%s";
+        proxy_pass $upstream;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+}
+`, internalGatewayIP, r.PrivatePort, r.Upstream)
+		} else {
+			// The upstream is resolved lazily via a variable + Docker's embedded
+			// DNS (127.0.0.11), not baked into a literal proxy_pass hostname. A
+			// literal hostname is resolved once at config load, and nginx refuses
+			// to start at all if it doesn't resolve — so a single stale vhost
+			// (module container removed outside the API) would take down routing
+			// for every module, including the platform UI. The lazy form just
+			// 502s that one route instead.
+			conf = fmt.Sprintf(`server {
     listen 80;
     server_name %s;
 
@@ -81,6 +122,7 @@ func (m *Manager) SetRoutes(ctx context.Context, moduleID string, routes []Route
     }
 }
 `, r.Hostname, r.Upstream)
+		}
 
 		if err := os.WriteFile(m.confPath(moduleID, r.Name), []byte(conf), 0o644); err != nil {
 			return fmt.Errorf("write nginx vhost for %s/%s: %w", moduleID, r.Name, err)

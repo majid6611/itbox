@@ -90,6 +90,35 @@ async function disable(username: string) {
           </tr>
         </tbody>
       </table>
+
+      <h2>Connected devices</h2>
+      <p class="hint">
+        Every device currently enrolled, straight from the VPN server. This isn't
+        matched to a specific person above — someone can enroll more than one
+        device (a laptop and a phone) with the same access, so this just shows
+        what's actually connected right now.
+      </p>
+      <table class="users-table" v-if="vpn.devices.length">
+        <thead>
+          <tr>
+            <th>Device</th>
+            <th>IP</th>
+            <th>Status</th>
+            <th>Last seen</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="d in vpn.devices" :key="d.name + d.ip">
+            <td>{{ d.name }} <span class="hint-inline">({{ d.os }})</span></td>
+            <td><code>{{ d.ip }}</code></td>
+            <td>
+              <span :class="['badge', d.connected ? 'running' : 'stopped']">{{ d.connected ? 'connected' : 'offline' }}</span>
+            </td>
+            <td>{{ new Date(d.last_seen).toLocaleString() }}</td>
+          </tr>
+        </tbody>
+      </table>
+      <p v-else class="hint">No devices have enrolled yet.</p>
     </template>
   </div>
 </template>
@@ -167,5 +196,12 @@ async function disable(username: string) {
 .button.disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+.hint-inline {
+  opacity: 0.6;
+  font-size: 0.85rem;
+}
+.users-table code {
+  font-family: monospace;
 }
 </style>

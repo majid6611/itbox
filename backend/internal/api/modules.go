@@ -36,6 +36,14 @@ type InstallModuleInput struct {
 	Body         map[string]string
 }
 
+type SetVisibilityInput struct {
+	SessionToken string `cookie:"itp_session"`
+	ID           string `path:"id"`
+	Body         struct {
+		Visibility string `json:"visibility"` // "public" or "private"
+	}
+}
+
 type ModuleActionOutput struct {
 	Body struct {
 		Success bool `json:"success"`
@@ -80,27 +88,6 @@ func registerModules(api huma.API, s *Server) {
 		if _, err := s.requireAuth(ctx, in.SessionToken); err != nil {
 			return nil, err
 		}
-		// vpn-netbird's Dex sidecar needs the LDAP bind password/base DN
-		// to search the directory — that lives in a different module's
-		// stored config, which the generic install path has no way to
-		// see. This is the one module with a hard (not soft) dependency
-		// on ldap-openldap: without it, there's nothing for VPN logins
-		// to authenticate against, so we fail fast here instead of
-		// installing a VPN nobody can log into.
-		if in.ID == "vpn-netbird" {
-			ldapStatus, ok, err := s.Modules.GetInstalled(ctx, "ldap-openldap")
-			if err != nil {
-				return nil, huma.Error500InternalServerError("check identity module", err)
-			}
-			if !ok || ldapStatus.Status != "running" {
-				return nil, huma.Error400BadRequest("install the Identity (OpenLDAP) module first — VPN logins authenticate against it")
-			}
-			if in.Body == nil {
-				in.Body = map[string]string{}
-			}
-			in.Body["ldap_base_dn"] = ldapStatus.Config["base_dn"]
-			in.Body["ldap_bind_password"] = ldapStatus.Config["admin_password"]
-		}
 		if err := s.Modules.Install(ctx, in.ID, in.Body); err != nil {
 			return nil, huma.Error400BadRequest("install failed", err)
 		}
@@ -108,9 +95,30 @@ func registerModules(api huma.API, s *Server) {
 			// Runs independently of the install goroutine above: waits for
 			// the module to actually come up, then does the one-time
 			// dance only NetBird's own API can do (not config.yaml) —
-			// bootstrap the first account, get a management token, and
-			// register our Dex sidecar as the login connector.
-			go s.bootstrapNetbird(context.Background())
+			// bootstrap the first account and get a management token our
+			// own panel uses for everything else (setup keys, peer list,
+			// routes).
+			go func() {
+				bgCtx := context.Background()
+				s.bootstrapNetbird(bgCtx)
+				// Depends on bootstrapNetbird's management token, so it
+				// can't run concurrently with it — chained, not a
+				// separate goroutine.
+				s.bootstrapInternalGateway(bgCtx)
+			}()
+		}
+		if in.ID == "fileshare-webdav" {
+			// Every other user/group management endpoint creates a WebDAV
+			// folder at the moment it creates the LDAP account/group — but
+			// that only covers accounts created *after* WebDAV exists. If
+			// LDAP was set up first (the normal order — see
+			// ldap-openldap's hard dependency on vpn-netbird above, WebDAV
+			// has no such ordering requirement), every existing user and
+			// group would otherwise have working logins but no folder to
+			// actually use, and no way to create one themselves (root is
+			// read-only by design). Back-fill everyone already in the
+			// directory once the module is actually up.
+			go s.backfillWebdavFolders(context.Background())
 		}
 		out := &ModuleActionOutput{}
 		out.Body.Success = true
@@ -145,6 +153,23 @@ func registerModules(api huma.API, s *Server) {
 		}
 		if err := s.Modules.Disable(ctx, in.ID); err != nil {
 			return nil, huma.Error400BadRequest("disable failed", err)
+		}
+		out := &ModuleActionOutput{}
+		out.Body.Success = true
+		return out, nil
+	})
+
+	huma.Register(api, huma.Operation{
+		OperationID: "set-module-visibility",
+		Method:      "POST",
+		Path:        "/api/modules/{id}/visibility",
+		Summary:     "Make a module's primary route public (reachable on the internet) or private (VPN-only)",
+	}, func(ctx context.Context, in *SetVisibilityInput) (*ModuleActionOutput, error) {
+		if _, err := s.requireAuth(ctx, in.SessionToken); err != nil {
+			return nil, err
+		}
+		if err := s.Modules.SetVisibility(ctx, in.ID, in.Body.Visibility); err != nil {
+			return nil, huma.Error400BadRequest("set visibility failed", err)
 		}
 		out := &ModuleActionOutput{}
 		out.Body.Success = true

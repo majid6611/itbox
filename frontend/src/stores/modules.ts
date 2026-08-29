@@ -55,5 +55,9 @@ export const useModulesStore = defineStore('modules', {
       await api.delete(`/modules/${id}`)
       await this.fetchAll()
     },
+    async setVisibility(id: string, visibility: 'public' | 'private') {
+      await api.post(`/modules/${id}/visibility`, { visibility })
+      await this.fetchAll()
+    },
   },
 })

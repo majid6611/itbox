@@ -7,6 +7,7 @@ export const useVpnStore = defineStore('vpn', {
     available: false,
     domainConfigured: false,
     users: [] as VpnUsersResponse['users'],
+    devices: [] as VpnUsersResponse['devices'],
     loading: false,
   }),
   actions: {
@@ -17,6 +18,7 @@ export const useVpnStore = defineStore('vpn', {
         this.available = res.available
         this.domainConfigured = res.domain_configured
         this.users = res.users
+        this.devices = res.devices
       } finally {
         this.loading = false
       }

@@ -17,6 +17,8 @@ type Config struct {
 
 	NginxConfDir       string
 	NginxContainerName string
+
+	GatewayContainerName string
 }
 
 func Load() (*Config, error) {
@@ -32,6 +34,8 @@ func Load() (*Config, error) {
 
 		NginxConfDir:       getEnv("NGINX_CONF_DIR", "./nginx/conf.d"),
 		NginxContainerName: getEnv("NGINX_CONTAINER_NAME", "itplatform-nginx"),
+
+		GatewayContainerName: getEnv("GATEWAY_CONTAINER_NAME", "itplatform-internal-gateway"),
 	}
 
 	if cfg.DatabaseURL == "" {

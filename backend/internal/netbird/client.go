@@ -84,18 +84,6 @@ func (c *Client) Setup(ctx context.Context, email, password, name string) (pat s
 	return out.PersonalAccessToken, nil
 }
 
-// RegisterIdentityProvider registers an upstream OIDC connector (our Dex
-// sidecar) with NetBird's embedded IdP.
-func (c *Client) RegisterIdentityProvider(ctx context.Context, name, issuer, clientID, clientSecret string) error {
-	return c.do(ctx, http.MethodPost, "/api/identity-providers", map[string]any{
-		"type":          "oidc",
-		"name":          name,
-		"issuer":        issuer,
-		"client_id":     clientID,
-		"client_secret": clientSecret,
-	}, nil)
-}
-
 type SetupKey struct {
 	ID  string `json:"id"`
 	Key string `json:"key"`
@@ -124,4 +112,61 @@ func (c *Client) DeleteSetupKey(ctx context.Context, id string) error {
 		return fmt.Errorf("delete setup key: %w", err)
 	}
 	return nil
+}
+
+type Peer struct {
+	ID        string `json:"id"`
+	Hostname  string `json:"hostname"`
+	Name      string `json:"name"`
+	IP        string `json:"ip"`
+	Connected bool   `json:"connected"`
+	LastSeen  string `json:"last_seen"`
+	OS        string `json:"os"`
+}
+
+// ListPeers returns every device currently enrolled — NOT attributable to
+// a specific company user: setup keys are reusable (one person's key can
+// enroll several devices) and NetBird's peer objects don't reference which
+// key created them, so this is deliberately a flat device list, not a
+// per-user one.
+func (c *Client) ListPeers(ctx context.Context) ([]Peer, error) {
+	var out []Peer
+	if err := c.do(ctx, http.MethodGet, "/api/peers", nil, &out); err != nil {
+		return nil, fmt.Errorf("list peers: %w", err)
+	}
+	return out, nil
+}
+
+type Group struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// ListGroups returns every peer group — used to find the ID of the "All"
+// group NetBird creates automatically, needed as a route's distribution
+// group (which peers get told about the route).
+func (c *Client) ListGroups(ctx context.Context) ([]Group, error) {
+	var out []Group
+	if err := c.do(ctx, http.MethodGet, "/api/groups", nil, &out); err != nil {
+		return nil, fmt.Errorf("list groups: %w", err)
+	}
+	return out, nil
+}
+
+// CreateRoute advertises network (a CIDR, e.g. "10.201.28.2/32") as
+// reachable via peerID to every peer in groupID — the mechanism behind
+// both the LAN-gateway feature and private module routing: a device VPN
+// clients get told about only because a specific peer said "I can reach
+// this," not because it's on the public internet.
+func (c *Client) CreateRoute(ctx context.Context, network, peerID, groupID string) error {
+	return c.do(ctx, http.MethodPost, "/api/routes", map[string]any{
+		"network":     network,
+		"peer":        peerID,
+		"description": "internal services gateway",
+		"network_id":  "internal-services",
+		"masquerade":  true,
+		"enabled":     true,
+		"metric":      100, // required, 1-9999 — no default, NetBird 422s without it
+		"groups":      []string{groupID},
+	}, nil)
 }
