@@ -11,7 +11,11 @@ import (
 )
 
 type LoginInput struct {
-	Body struct {
+	// Set by nginx (see proxy/nginx.go's proxy_set_header X-Real-IP) —
+	// used only to key the login rate limiter below, never trusted for
+	// anything security-sensitive beyond that.
+	ClientIP string `header:"X-Real-IP"`
+	Body     struct {
 		Email    string `json:"email" format:"email"`
 		Password string `json:"password"`
 	}
@@ -52,13 +56,19 @@ func registerAuth(api huma.API, s *Server) {
 		Path:        "/api/auth/login",
 		Summary:     "Log in as an admin",
 	}, func(ctx context.Context, in *LoginInput) (*LoginOutput, error) {
+		key := rateLimitKey(in.ClientIP)
+		if !s.adminLoginLimiter.Allowed(key) {
+			return nil, huma.Error429TooManyRequests("too many failed login attempts — try again later")
+		}
 		token, err := s.Auth.Login(ctx, in.Body.Email, in.Body.Password)
 		if err != nil {
+			s.adminLoginLimiter.RecordFailure(key)
 			if err == auth.ErrInvalidCredentials {
 				return nil, huma.Error401Unauthorized("invalid email or password")
 			}
 			return nil, huma.Error500InternalServerError("login failed", err)
 		}
+		s.adminLoginLimiter.Reset(key)
 		out := &LoginOutput{}
 		out.SetCookie = (&http.Cookie{
 			Name:     sessionCookieName,

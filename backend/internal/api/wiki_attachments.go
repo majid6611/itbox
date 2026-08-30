@@ -48,6 +48,13 @@ func safeDispositionFilename(name string) string {
 	return name
 }
 
+// maxAttachmentSize caps a single wiki attachment upload — without this,
+// io.ReadAll(data.File) below reads the entire upload into memory with no
+// limit at all, so any logged-in employee could exhaust backend memory
+// with a handful of huge uploads. 25 MB comfortably covers real wiki
+// attachments (images, docs) without needing a config knob for it.
+const maxAttachmentSize = 25 * 1024 * 1024
+
 type UploadWikiAttachmentInput struct {
 	SessionToken string `cookie:"itp_employee_session"`
 	RawBody      huma.MultipartFormFiles[struct {
@@ -113,9 +120,12 @@ func registerWikiAttachments(api huma.API, s *Server) {
 			return nil, huma.Error400BadRequest("install the Backup Storage module first — attachments are stored there")
 		}
 
-		fileBytes, err := io.ReadAll(data.File)
+		fileBytes, err := io.ReadAll(io.LimitReader(data.File, maxAttachmentSize+1))
 		if err != nil {
 			return nil, huma.Error400BadRequest("read upload", err)
+		}
+		if len(fileBytes) > maxAttachmentSize {
+			return nil, huma.Error400BadRequest(fmt.Sprintf("file too large — max %d MB", maxAttachmentSize/1024/1024))
 		}
 		filename := data.File.Filename
 		key := fmt.Sprintf("wiki/%d/%s", pageID, filename)
