@@ -5,6 +5,11 @@ server {
     listen 80;
     server_name ${BASE_DOMAIN};
 
+    # Raised from nginx's 1 MB default — see frontend/nginx.conf's own
+    # client_max_body_size for why (wiki attachment uploads pass through
+    # this server block first).
+    client_max_body_size 30m;
+
     location / {
         proxy_pass http://frontend:80;
         proxy_set_header Host $host;

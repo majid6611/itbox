@@ -131,7 +131,10 @@ type WikiAttachment struct {
 // --- Employee portal auth ---
 
 type PortalLoginInput struct {
-	Body struct {
+	// Set by nginx (see proxy/nginx.go's proxy_set_header X-Real-IP) —
+	// used only to key the login rate limiter below.
+	ClientIP string `header:"X-Real-IP"`
+	Body     struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
 	}
@@ -166,6 +169,10 @@ func registerPortal(api huma.API, s *Server) {
 		Path:        "/api/portal/login",
 		Summary:     "Employee login (LDAP username/password) — separate from the admin login",
 	}, func(ctx context.Context, in *PortalLoginInput) (*PortalLoginOutput, error) {
+		key := rateLimitKey(in.ClientIP)
+		if !s.employeeLoginLimiter.Allowed(key) {
+			return nil, huma.Error429TooManyRequests("too many failed login attempts — try again later")
+		}
 		dirClient, available, err := s.directoryClient(ctx)
 		if err != nil {
 			return nil, huma.Error500InternalServerError("check identity module", err)
@@ -175,8 +182,10 @@ func registerPortal(api huma.API, s *Server) {
 		}
 		token, err := s.Employee.Login(ctx, dirClient, in.Body.Username, in.Body.Password)
 		if err != nil {
+			s.employeeLoginLimiter.RecordFailure(key)
 			return nil, huma.Error401Unauthorized("invalid username or password")
 		}
+		s.employeeLoginLimiter.Reset(key)
 		out := &PortalLoginOutput{}
 		out.Body.Username = in.Body.Username
 		out.SetCookie = []string{fmt.Sprintf("%s=%s; Path=/; HttpOnly; SameSite=Lax", employeeSessionCookieName, token)}
