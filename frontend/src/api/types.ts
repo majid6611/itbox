@@ -181,6 +181,7 @@ export interface ChatMessage {
   sender_username: string
   group_name?: string
   recipient_username?: string
+  custom_group_id?: number
   content: string
   created_at: string
   attachment?: ChatAttachment
@@ -191,8 +192,16 @@ export interface ChatUser {
   online: boolean
 }
 
+export interface ChatCustomGroup {
+  id: number
+  name: string
+  created_by: string
+  members: string[]
+}
+
 export interface ChatEvent {
-  type: 'message' | 'presence'
+  type: 'message' | 'presence' | 'group_invite'
   message?: ChatMessage
   presence?: { username: string; online: boolean }
+  group?: { id: number; name: string }
 }

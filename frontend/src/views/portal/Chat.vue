@@ -1,22 +1,47 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { usePortalStore } from '../../stores/portal'
-import { useChatStore } from '../../stores/chat'
+import { useChatStore, type TargetKind } from '../../stores/chat'
 
 const portal = usePortalStore()
 const chat = useChatStore()
 
-const active = ref<{ kind: 'group' | 'dm'; name: string } | null>(null)
+const active = ref<{ kind: TargetKind; name: string | number } | null>(null)
 const draft = ref('')
 const sending = ref(false)
 const fileInput = ref<HTMLInputElement | null>(null)
 const threadEl = ref<HTMLElement | null>(null)
 const moduleUnavailable = ref(false)
 
-const messages = computed(() => (active.value ? chat.messagesFor(active.value.kind, active.value.name) : []))
+const showNewGroup = ref(false)
+const newGroupName = ref('')
+const newGroupMembers = ref<Set<string>>(new Set())
+const showAddMember = ref(false)
+const addMemberName = ref('')
 
-async function selectTarget(kind: 'group' | 'dm', name: string) {
+const messages = computed(() => (active.value ? chat.messagesFor(active.value.kind, active.value.name) : []))
+const activeGroup = computed(() =>
+  active.value?.kind === 'custom' ? chat.customGroups.find((g) => g.id === active.value!.name) : undefined,
+)
+// Only real employees not already in the group — a free-text field let
+// anyone type a nonexistent username in ("dddsds") with no feedback that
+// it wasn't a real person.
+const addableUsers = computed(() => {
+  const current = new Set(activeGroup.value?.members ?? [])
+  return chat.users.filter((u) => !current.has(u.username))
+})
+
+function keyFor(kind: TargetKind, name: string | number) {
+  return `${kind}:${name}`
+}
+function isUnread(kind: TargetKind, name: string | number) {
+  return !!chat.unread[keyFor(kind, name)]
+}
+
+async function selectTarget(kind: TargetKind, name: string | number) {
   active.value = { kind, name }
+  chat.setActive(kind, name)
+  showAddMember.value = false
   if (chat.messagesFor(kind, name).length === 0) {
     await chat.fetchHistory(kind, name)
   }
@@ -60,13 +85,35 @@ async function pickFile(e: Event) {
   }
 }
 
+function toggleNewGroupMember(username: string) {
+  if (newGroupMembers.value.has(username)) newGroupMembers.value.delete(username)
+  else newGroupMembers.value.add(username)
+}
+
+async function createGroup() {
+  const name = newGroupName.value.trim()
+  if (!name) return
+  await chat.createGroup(name, Array.from(newGroupMembers.value))
+  showNewGroup.value = false
+  newGroupName.value = ''
+  newGroupMembers.value = new Set()
+}
+
+async function addMember() {
+  const username = addMemberName.value.trim()
+  if (!username || active.value?.kind !== 'custom') return
+  await chat.addGroupMember(active.value.name as number, username)
+  addMemberName.value = ''
+  showAddMember.value = false
+}
+
 function formatTime(iso: string) {
   return new Date(iso).toLocaleString()
 }
 
 onMounted(async () => {
   try {
-    await Promise.all([chat.fetchChannels(), chat.fetchUsers()])
+    await Promise.all([chat.fetchChannels(), chat.fetchUsers(), chat.fetchCustomGroups()])
   } catch {
     moduleUnavailable.value = true
     return
@@ -92,7 +139,30 @@ onBeforeUnmount(() => {
       <ul class="target-list">
         <li v-for="c in chat.channels" :key="c">
           <button :class="{ active: active?.kind === 'group' && active.name === c }" @click="selectTarget('group', c)">
+            <span v-if="isUnread('group', c)" class="dot unread"></span>
             # {{ c }}
+          </button>
+        </li>
+      </ul>
+
+      <h2>
+        My Groups
+        <button class="new-group-btn" @click="showNewGroup = !showNewGroup">+</button>
+      </h2>
+      <form v-if="showNewGroup" class="new-group-form" @submit.prevent="createGroup">
+        <input v-model="newGroupName" placeholder="Group name" required />
+        <p class="hint">Add people:</p>
+        <label v-for="u in chat.users" :key="u.username" class="member-check">
+          <input type="checkbox" :checked="newGroupMembers.has(u.username)" @change="toggleNewGroupMember(u.username)" />
+          {{ u.username }}
+        </label>
+        <button type="submit">Create</button>
+      </form>
+      <ul class="target-list">
+        <li v-for="g in chat.customGroups" :key="g.id">
+          <button :class="{ active: active?.kind === 'custom' && active.name === g.id }" @click="selectTarget('custom', g.id)">
+            <span v-if="isUnread('custom', g.id)" class="dot unread"></span>
+            🔒 {{ g.name }}
           </button>
         </li>
       </ul>
@@ -101,6 +171,7 @@ onBeforeUnmount(() => {
       <ul class="target-list">
         <li v-for="u in chat.users" :key="u.username">
           <button :class="{ active: active?.kind === 'dm' && active.name === u.username }" @click="selectTarget('dm', u.username)">
+            <span v-if="isUnread('dm', u.username)" class="dot unread"></span>
             <span class="dot" :class="{ online: u.online }"></span>
             {{ u.username }}
           </button>
@@ -111,16 +182,29 @@ onBeforeUnmount(() => {
 
     <main class="thread-pane">
       <div v-if="!active" class="empty-state">
-        <p>Pick a channel or a person to start chatting.</p>
+        <p>Pick a channel, group, or person to start chatting.</p>
       </div>
       <template v-else>
         <div class="thread-header">
           <h1 v-if="active.kind === 'group'"># {{ active.name }}</h1>
+          <h1 v-else-if="active.kind === 'custom'">🔒 {{ activeGroup?.name }}</h1>
           <h1 v-else>
-            <span class="dot" :class="{ online: chat.isOnline(active.name) }"></span>
+            <span class="dot" :class="{ online: chat.isOnline(String(active.name)) }"></span>
             {{ active.name }}
           </h1>
+          <div v-if="active.kind === 'custom'" class="group-actions">
+            <span class="hint-inline">{{ activeGroup?.members.join(', ') }}</span>
+            <button @click="showAddMember = !showAddMember">+ Add person</button>
+          </div>
         </div>
+        <form v-if="showAddMember" class="add-member-form" @submit.prevent="addMember">
+          <select v-model="addMemberName" required>
+            <option value="" disabled>Pick a person…</option>
+            <option v-for="u in addableUsers" :key="u.username" :value="u.username">{{ u.username }}</option>
+          </select>
+          <button type="submit" :disabled="!addMemberName">Add</button>
+        </form>
+        <p v-else-if="active.kind === 'custom' && addableUsers.length === 0" class="hint">Everyone's already in this group.</p>
 
         <div ref="threadEl" class="thread">
           <div v-for="m in messages" :key="m.id" class="message" :class="{ mine: m.sender_username === portal.username }">
@@ -163,6 +247,9 @@ onBeforeUnmount(() => {
   height: 100%;
 }
 .sidebar h2 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   font-size: 0.85rem;
   text-transform: uppercase;
   opacity: 0.7;
@@ -170,6 +257,25 @@ onBeforeUnmount(() => {
 }
 .sidebar h2:first-child {
   margin-top: 0;
+}
+.new-group-btn {
+  font-size: 0.8rem;
+  padding: 0 0.4rem;
+  line-height: 1.4;
+}
+.new-group-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin-bottom: 0.5rem;
+  font-size: 0.85rem;
+}
+.member-check {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-weight: normal;
+  text-transform: none;
 }
 .target-list {
   list-style: none;
@@ -207,6 +313,9 @@ onBeforeUnmount(() => {
 .dot.online {
   background: #1a7f37;
 }
+.dot.unread {
+  background: #4a9eff;
+}
 .thread-pane {
   flex: 1;
   min-width: 0;
@@ -214,12 +323,28 @@ onBeforeUnmount(() => {
   flex-direction: column;
   height: 100%;
 }
+.thread-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
 .thread-header h1 {
   display: flex;
   align-items: center;
   gap: 0.5rem;
   font-size: 1.2rem;
   margin: 0 0 0.5rem;
+}
+.group-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.add-member-form {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
 }
 .thread {
   flex: 1;

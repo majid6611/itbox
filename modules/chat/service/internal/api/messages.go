@@ -15,6 +15,7 @@ type GetMessagesInput struct {
 	SessionToken string `cookie:"itp_employee_session"`
 	Group        string `query:"group"`
 	With         string `query:"with"`
+	CustomGroup  int64  `query:"custom_group"`
 	// After is a message id cursor — 0 means "no cursor, give me the last
 	// 50" (initial load); a real id means "everything since this"
 	// (reconnect backfill). This, not the WebSocket, is the actual
@@ -33,6 +34,7 @@ type SendMessageInput struct {
 	Body         struct {
 		GroupName         string `json:"group_name,omitempty"`
 		RecipientUsername string `json:"recipient_username,omitempty"`
+		CustomGroupID     int64  `json:"custom_group_id,omitempty"`
 		Content           string `json:"content"`
 	}
 }
@@ -41,22 +43,47 @@ type SendMessageOutput struct {
 	Body MessageOut
 }
 
+// targetCount reports how many of the three mutually-exclusive message
+// targets are set — every send/history endpoint needs exactly one.
+func targetCount(group, with string, customGroup int64) int {
+	n := 0
+	if group != "" {
+		n++
+	}
+	if with != "" {
+		n++
+	}
+	if customGroup != 0 {
+		n++
+	}
+	return n
+}
+
 func registerMessages(api huma.API, s *Server) {
 	huma.Register(api, huma.Operation{
 		OperationID: "get-chat-messages",
 		Method:      "GET",
 		Path:        "/api/portal/chat/messages",
-		Summary:     "Get channel or DM history — the last 50 messages, or everything after a given id",
+		Summary:     "Get channel, DM, or private-group history — the last 50 messages, or everything after a given id",
 	}, func(ctx context.Context, in *GetMessagesInput) (*GetMessagesOutput, error) {
 		username, err := s.requireEmployeeAuth(ctx, in.SessionToken)
 		if err != nil {
 			return nil, err
 		}
-		if (in.Group == "") == (in.With == "") {
-			return nil, huma.Error400BadRequest("specify exactly one of group or with")
+		if targetCount(in.Group, in.With, in.CustomGroup) != 1 {
+			return nil, huma.Error400BadRequest("specify exactly one of group, with, or custom_group")
+		}
+		if in.CustomGroup != 0 {
+			isMember, err := s.isGroupMember(ctx, in.CustomGroup, username)
+			if err != nil {
+				return nil, huma.Error500InternalServerError("check membership", err)
+			}
+			if !isMember {
+				return nil, huma.Error403Forbidden("you're not a member of this group")
+			}
 		}
 
-		messages, err := s.fetchMessages(ctx, username, in.Group, in.With, in.After)
+		messages, err := s.fetchMessages(ctx, username, in.Group, in.With, in.CustomGroup, in.After)
 		if err != nil {
 			return nil, huma.Error500InternalServerError("load messages", err)
 		}
@@ -69,7 +96,7 @@ func registerMessages(api huma.API, s *Server) {
 		OperationID: "send-chat-message",
 		Method:      "POST",
 		Path:        "/api/portal/chat/messages",
-		Summary:     "Send a group or DM text message",
+		Summary:     "Send a text message to a channel, a DM, or a private group",
 	}, func(ctx context.Context, in *SendMessageInput) (*SendMessageOutput, error) {
 		username, err := s.requireEmployeeAuth(ctx, in.SessionToken)
 		if err != nil {
@@ -79,15 +106,26 @@ func registerMessages(api huma.API, s *Server) {
 		if content == "" {
 			return nil, huma.Error400BadRequest("message can't be empty")
 		}
-		if (in.Body.GroupName == "") == (in.Body.RecipientUsername == "") {
-			return nil, huma.Error400BadRequest("specify exactly one of group_name or recipient_username")
+		if targetCount(in.Body.GroupName, in.Body.RecipientUsername, in.Body.CustomGroupID) != 1 {
+			return nil, huma.Error400BadRequest("specify exactly one of group_name, recipient_username, or custom_group_id")
+		}
+		if in.Body.CustomGroupID != 0 {
+			isMember, err := s.isGroupMember(ctx, in.Body.CustomGroupID, username)
+			if err != nil {
+				return nil, huma.Error500InternalServerError("check membership", err)
+			}
+			if !isMember {
+				return nil, huma.Error403Forbidden("you're not a member of this group")
+			}
 		}
 
-		msg, err := s.insertMessage(ctx, username, in.Body.GroupName, in.Body.RecipientUsername, content)
+		msg, err := s.insertMessage(ctx, username, in.Body.GroupName, in.Body.RecipientUsername, in.Body.CustomGroupID, content)
 		if err != nil {
 			return nil, huma.Error500InternalServerError("save message", err)
 		}
-		s.pushMessage(msg)
+		if err := s.pushMessage(ctx, msg); err != nil {
+			return nil, huma.Error500InternalServerError("deliver message", err)
+		}
 
 		out := &SendMessageOutput{Body: *msg}
 		return out, nil
@@ -95,36 +133,38 @@ func registerMessages(api huma.API, s *Server) {
 }
 
 // fetchMessages implements the two shapes described on GetMessagesInput.After
-// for both a group channel and a DM, then attaches any file attachments in
-// one follow-up query rather than one per message.
-func (s *Server) fetchMessages(ctx context.Context, me, group, with string, after int64) ([]MessageOut, error) {
+// for a group channel, a DM, or a private group, then attaches any file
+// attachments in one follow-up query rather than one per message. Caller
+// must have already checked group membership for a private-group target —
+// this assumes access is already allowed.
+func (s *Server) fetchMessages(ctx context.Context, me, group, with string, customGroup int64, after int64) ([]MessageOut, error) {
+	const cols = "id, sender_username, group_name, recipient_username, custom_group_id, content, created_at"
 	var rows pgx.Rows
 	var err error
 	switch {
 	case group != "" && after > 0:
-		rows, err = s.DB.Query(ctx, `
-			SELECT id, sender_username, group_name, recipient_username, content, created_at
-			FROM chat_messages WHERE group_name = $1 AND id > $2 ORDER BY id ASC LIMIT 500`, group, after)
+		rows, err = s.DB.Query(ctx, `SELECT `+cols+` FROM chat_messages WHERE group_name = $1 AND id > $2 ORDER BY id ASC LIMIT 500`, group, after)
 	case group != "":
-		rows, err = s.DB.Query(ctx, `
-			SELECT id, sender_username, group_name, recipient_username, content, created_at FROM (
-				SELECT id, sender_username, group_name, recipient_username, content, created_at
-				FROM chat_messages WHERE group_name = $1 ORDER BY id DESC LIMIT 50
-			) recent ORDER BY id ASC`, group)
+		rows, err = s.DB.Query(ctx, `SELECT `+cols+` FROM (
+			SELECT `+cols+` FROM chat_messages WHERE group_name = $1 ORDER BY id DESC LIMIT 50
+		) recent ORDER BY id ASC`, group)
+	case customGroup != 0 && after > 0:
+		rows, err = s.DB.Query(ctx, `SELECT `+cols+` FROM chat_messages WHERE custom_group_id = $1 AND id > $2 ORDER BY id ASC LIMIT 500`, customGroup, after)
+	case customGroup != 0:
+		rows, err = s.DB.Query(ctx, `SELECT `+cols+` FROM (
+			SELECT `+cols+` FROM chat_messages WHERE custom_group_id = $1 ORDER BY id DESC LIMIT 50
+		) recent ORDER BY id ASC`, customGroup)
 	case after > 0:
 		rows, err = s.DB.Query(ctx, `
-			SELECT id, sender_username, group_name, recipient_username, content, created_at
-			FROM chat_messages
+			SELECT `+cols+` FROM chat_messages
 			WHERE ((sender_username = $1 AND recipient_username = $2) OR (sender_username = $2 AND recipient_username = $1)) AND id > $3
 			ORDER BY id ASC LIMIT 500`, me, with, after)
 	default:
-		rows, err = s.DB.Query(ctx, `
-			SELECT id, sender_username, group_name, recipient_username, content, created_at FROM (
-				SELECT id, sender_username, group_name, recipient_username, content, created_at
-				FROM chat_messages
-				WHERE (sender_username = $1 AND recipient_username = $2) OR (sender_username = $2 AND recipient_username = $1)
-				ORDER BY id DESC LIMIT 50
-			) recent ORDER BY id ASC`, me, with)
+		rows, err = s.DB.Query(ctx, `SELECT `+cols+` FROM (
+			SELECT `+cols+` FROM chat_messages
+			WHERE (sender_username = $1 AND recipient_username = $2) OR (sender_username = $2 AND recipient_username = $1)
+			ORDER BY id DESC LIMIT 50
+		) recent ORDER BY id ASC`, me, with)
 	}
 	if err != nil {
 		return nil, err
@@ -137,7 +177,8 @@ func (s *Server) fetchMessages(ctx context.Context, me, group, with string, afte
 		var m MessageOut
 		var createdAt time.Time
 		var groupName, recipient *string
-		if err := rows.Scan(&m.ID, &m.SenderUsername, &groupName, &recipient, &m.Content, &createdAt); err != nil {
+		var customGroupID *int64
+		if err := rows.Scan(&m.ID, &m.SenderUsername, &groupName, &recipient, &customGroupID, &m.Content, &createdAt); err != nil {
 			return nil, err
 		}
 		if groupName != nil {
@@ -145,6 +186,9 @@ func (s *Server) fetchMessages(ctx context.Context, me, group, with string, afte
 		}
 		if recipient != nil {
 			m.RecipientUsername = *recipient
+		}
+		if customGroupID != nil {
+			m.CustomGroupID = *customGroupID
 		}
 		m.CreatedAt = createdAt.Format(time.RFC3339)
 		messages = append(messages, m)
@@ -188,21 +232,26 @@ func (s *Server) attachmentsFor(ctx context.Context, messageIDs []int64) (map[in
 }
 
 // insertMessage writes a message and returns it in the same shape the live
-// push and the history endpoint both use.
-func (s *Server) insertMessage(ctx context.Context, sender, group, recipient, content string) (*MessageOut, error) {
+// push and the history endpoint both use. Caller must have already
+// validated the target and, for a private group, membership.
+func (s *Server) insertMessage(ctx context.Context, sender, group, recipient string, customGroupID int64, content string) (*MessageOut, error) {
 	var groupArg, recipientArg *string
+	var customGroupArg *int64
 	if group != "" {
 		groupArg = &group
 	}
 	if recipient != "" {
 		recipientArg = &recipient
 	}
-	m := &MessageOut{SenderUsername: sender, GroupName: group, RecipientUsername: recipient, Content: content}
+	if customGroupID != 0 {
+		customGroupArg = &customGroupID
+	}
+	m := &MessageOut{SenderUsername: sender, GroupName: group, RecipientUsername: recipient, CustomGroupID: customGroupID, Content: content}
 	var createdAt time.Time
 	err := s.DB.QueryRow(ctx, `
-		INSERT INTO chat_messages (sender_username, group_name, recipient_username, content)
-		VALUES ($1, $2, $3, $4) RETURNING id, created_at
-	`, sender, groupArg, recipientArg, content).Scan(&m.ID, &createdAt)
+		INSERT INTO chat_messages (sender_username, group_name, recipient_username, custom_group_id, content)
+		VALUES ($1, $2, $3, $4, $5) RETURNING id, created_at
+	`, sender, groupArg, recipientArg, customGroupArg, content).Scan(&m.ID, &createdAt)
 	if err != nil {
 		return nil, err
 	}
@@ -210,24 +259,34 @@ func (s *Server) insertMessage(ctx context.Context, sender, group, recipient, co
 	return m, nil
 }
 
-// pushMessage delivers a just-sent message live. Group messages go to
-// everyone connected — channels are open to the whole company (chat has no
-// per-page permission model like wiki's, that wasn't asked for), so
-// anyone might have that channel open. DMs go only to the two
-// participants, including the sender's own other tabs/devices for a
-// consistent multi-device view.
-func (s *Server) pushMessage(m *MessageOut) {
+// pushMessage delivers a just-sent message live. LDAP-group channel
+// messages go to everyone connected — those channels are open to the
+// whole company, so anyone might have one open. DMs go only to the two
+// participants (including the sender's own other tabs/devices, for a
+// consistent multi-device view). Private-group messages go only to that
+// group's actual members — the same invisibility guarantee the group's
+// existence gets extends to its live traffic, not just its history.
+func (s *Server) pushMessage(ctx context.Context, m *MessageOut) error {
 	hm := &hub.Message{
 		ID: m.ID, SenderUsername: m.SenderUsername, GroupName: m.GroupName,
-		RecipientUsername: m.RecipientUsername, Content: m.Content, CreatedAt: m.CreatedAt,
+		RecipientUsername: m.RecipientUsername, CustomGroupID: m.CustomGroupID,
+		Content: m.Content, CreatedAt: m.CreatedAt,
 	}
 	if m.Attachment != nil {
 		hm.Attachment = &hub.Attachment{ID: m.Attachment.ID, Filename: m.Attachment.Filename, Size: m.Attachment.Size}
 	}
 	event := hub.Event{Type: "message", Message: hm}
-	if m.GroupName != "" {
+	switch {
+	case m.GroupName != "":
 		s.Hub.Broadcast(event)
-	} else {
+	case m.CustomGroupID != 0:
+		members, err := s.groupMembers(ctx, m.CustomGroupID)
+		if err != nil {
+			return err
+		}
+		s.Hub.SendTo(members, event)
+	default:
 		s.Hub.SendTo([]string{m.SenderUsername, m.RecipientUsername}, event)
 	}
+	return nil
 }

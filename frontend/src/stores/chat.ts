@@ -1,12 +1,24 @@
 import { defineStore } from 'pinia'
 import { api } from '../api/client'
-import type { ChatEvent, ChatMessage, ChatUser } from '../api/types'
+import type { ChatCustomGroup, ChatEvent, ChatMessage, ChatUser } from '../api/types'
 
-// A DM thread and a group channel are both just "a target" — this key
-// scheme is how the store tells them apart without needing two parallel
-// sets of state everywhere.
-function targetKey(kind: 'group' | 'dm', name: string) {
+export type TargetKind = 'group' | 'dm' | 'custom'
+
+// A DM thread, an LDAP-group channel, and a private custom group are all
+// just "a target" — this key scheme is how the store tells them apart
+// without needing three parallel sets of state everywhere.
+function targetKey(kind: TargetKind, name: string | number) {
   return `${kind}:${name}`
+}
+
+// Which target a just-arrived message actually belongs to — for a DM this
+// depends on which side of it you're on (the thread is keyed by the
+// *other* person, not by "recipient", since either party could be either).
+function keyForMessage(m: ChatMessage, myUsername: string): string {
+  if (m.group_name) return targetKey('group', m.group_name)
+  if (m.custom_group_id) return targetKey('custom', m.custom_group_id)
+  const other = m.sender_username === myUsername ? m.recipient_username! : m.sender_username
+  return targetKey('dm', other)
 }
 
 export const useChatStore = defineStore('chat', {
@@ -14,7 +26,13 @@ export const useChatStore = defineStore('chat', {
     myUsername: '',
     channels: [] as string[],
     users: [] as ChatUser[],
+    customGroups: [] as ChatCustomGroup[],
     messagesByTarget: {} as Record<string, ChatMessage[]>,
+    // Which thread the UI currently has open — kept here, not just in the
+    // component, so the WS handler below knows whether an incoming
+    // message should be marked unread or is already being looked at.
+    activeKey: null as string | null,
+    unread: {} as Record<string, boolean>,
     ws: null as WebSocket | null,
     wsConnected: false,
   }),
@@ -27,33 +45,53 @@ export const useChatStore = defineStore('chat', {
       const res = await api.get<{ users: ChatUser[] }>('/portal/chat/users')
       this.users = res.users ?? []
     },
-    async fetchHistory(kind: 'group' | 'dm', name: string) {
-      const param = kind === 'group' ? `group=${encodeURIComponent(name)}` : `with=${encodeURIComponent(name)}`
+    async fetchCustomGroups() {
+      const res = await api.get<{ groups: ChatCustomGroup[] }>('/portal/chat/groups')
+      this.customGroups = res.groups ?? []
+    },
+    async createGroup(name: string, members: string[]) {
+      await api.post('/portal/chat/groups', { name, members })
+      await this.fetchCustomGroups()
+    },
+    async addGroupMember(groupId: number, username: string) {
+      await api.post(`/portal/chat/groups/${groupId}/members`, { username })
+      await this.fetchCustomGroups()
+    },
+    async fetchHistory(kind: TargetKind, name: string | number) {
+      const param = kind === 'group' ? `group=${encodeURIComponent(name)}` : kind === 'custom' ? `custom_group=${name}` : `with=${encodeURIComponent(String(name))}`
       const res = await api.get<{ messages: ChatMessage[] }>(`/portal/chat/messages?${param}`)
       this.messagesByTarget[targetKey(kind, name)] = res.messages ?? []
     },
-    async sendMessage(kind: 'group' | 'dm', name: string, content: string) {
-      const body = kind === 'group' ? { group_name: name, content } : { recipient_username: name, content }
+    async sendMessage(kind: TargetKind, name: string | number, content: string) {
+      const body =
+        kind === 'group' ? { group_name: name, content } : kind === 'custom' ? { custom_group_id: name, content } : { recipient_username: name, content }
       // Not appended locally here on purpose — the server echoes every
-      // sent message back over the WebSocket (group: to everyone, DM: to
-      // both participants, including the sender's own other tabs), so the
-      // WS handler below is the single place messages get added. Avoids
-      // ever showing a message twice.
+      // sent message back over the WebSocket (group/custom group: to
+      // everyone who can see it, DM: to both participants, including the
+      // sender's own other tabs), so the WS handler below is the single
+      // place messages get added. Avoids ever showing a message twice.
       await api.post('/portal/chat/messages', body)
     },
-    async sendFile(kind: 'group' | 'dm', name: string, file: File, caption: string) {
+    async sendFile(kind: TargetKind, name: string | number, file: File, caption: string) {
       const form = new FormData()
-      if (kind === 'group') form.append('group_name', name)
-      else form.append('recipient_username', name)
+      if (kind === 'group') form.append('group_name', String(name))
+      else if (kind === 'custom') form.append('custom_group_id', String(name))
+      else form.append('recipient_username', String(name))
       form.append('caption', caption)
       form.append('file', file)
       await api.upload('/portal/chat/attachments', form)
     },
-    messagesFor(kind: 'group' | 'dm', name: string): ChatMessage[] {
+    messagesFor(kind: TargetKind, name: string | number): ChatMessage[] {
       return this.messagesByTarget[targetKey(kind, name)] ?? []
     },
     isOnline(username: string): boolean {
       return this.users.find((u) => u.username === username)?.online ?? false
+    },
+    // Call when the UI switches to a thread — clears its unread flag and
+    // tells the WS handler this is now the one being looked at.
+    setActive(kind: TargetKind, name: string | number) {
+      this.activeKey = targetKey(kind, name)
+      this.unread[this.activeKey] = false
     },
 
     connectWS(myUsername: string) {
@@ -79,19 +117,30 @@ export const useChatStore = defineStore('chat', {
         if (event.type === 'presence' && event.presence) {
           const u = this.users.find((x) => x.username === event.presence!.username)
           if (u) u.online = event.presence.online
+        } else if (event.type === 'group_invite') {
+          // Being added to a group is otherwise silent until a reload —
+          // same "went stale without a refresh" gap a missed message
+          // would have, just for group membership instead of content.
+          this.fetchCustomGroups()
         } else if (event.type === 'message' && event.message) {
           const m = event.message
-          const key = m.group_name
-            ? targetKey('group', m.group_name)
-            : targetKey('dm', m.sender_username === this.myUsername ? m.recipient_username! : m.sender_username)
+          const key = keyForMessage(m, this.myUsername)
           if (!this.messagesByTarget[key]) this.messagesByTarget[key] = []
           this.messagesByTarget[key].push(m)
+          // A message for a thread you're not currently looking at should
+          // be visible in the sidebar without needing a refresh to notice
+          // it happened — that's the whole point of "live", not just
+          // delivering bytes into memory nobody's told to look at.
+          if (key !== this.activeKey && m.sender_username !== this.myUsername) {
+            this.unread[key] = true
+          }
         }
       }
       this.ws = ws
     },
     disconnectWS() {
       this.myUsername = ''
+      this.activeKey = null
       this.ws?.close()
       this.ws = null
     },

@@ -38,6 +38,7 @@ func NewRouter(s *Server) http.Handler {
 	})
 
 	registerChannels(api, s)
+	registerCustomGroups(api, s)
 	registerMessages(api, s)
 	registerAttachments(api, s)
 
