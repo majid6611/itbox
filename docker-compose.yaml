@@ -10,6 +10,11 @@ networks:
     ipam:
       config:
         - subnet: 10.201.28.0/24
+          # Dynamic allocation (every module container, since none of them
+          # pin an address) is restricted to this sub-range so it can never
+          # land on .2/.3/.4 — those are reserved below for nginx/backend/
+          # internal-gateway and MUST stay fixed across restarts.
+          ip_range: 10.201.28.16/28
 
 services:
   nginx:

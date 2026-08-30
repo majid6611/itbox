@@ -91,6 +91,27 @@ func (c *Client) ListUsers() ([]User, error) {
 	return users, nil
 }
 
+// VerifyPassword checks a user's own password by binding as them
+// directly — the standard way to "log in" via LDAP, distinct from the
+// admin bind (c.bindDN/c.password) used everywhere else in this file for
+// directory lookups and management. Uses its own connection, never the
+// admin one, so a failed login can't disturb anything else.
+func (c *Client) VerifyPassword(username, password string) (bool, error) {
+	conn, err := ldap.DialURL("ldap://" + c.addr)
+	if err != nil {
+		return false, fmt.Errorf("dial ldap: %w", err)
+	}
+	defer conn.Close()
+
+	if err := conn.Bind(c.userDN(username), password); err != nil {
+		if ldap.IsErrorWithCode(err, ldap.LDAPResultInvalidCredentials) {
+			return false, nil
+		}
+		return false, fmt.Errorf("bind: %w", err)
+	}
+	return true, nil
+}
+
 // MinPasswordLength is the only password rule this platform enforces —
 // deliberately just a length floor, no complexity requirements.
 const MinPasswordLength = 8

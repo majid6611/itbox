@@ -10,6 +10,7 @@ import (
 	"it-platform/backend/internal/config"
 	"it-platform/backend/internal/db"
 	"it-platform/backend/internal/docker"
+	"it-platform/backend/internal/employee"
 	"it-platform/backend/internal/modules"
 	"it-platform/backend/internal/proxy"
 )
@@ -36,6 +37,7 @@ func main() {
 	if err := authService.EnsureAdmin(ctx, cfg.AdminEmail, cfg.AdminPassword); err != nil {
 		log.Fatalf("seed admin: %v", err)
 	}
+	employeeService := employee.NewService(pool)
 
 	registry, err := modules.NewRegistry(cfg.ModulesDir)
 	if err != nil {
@@ -51,6 +53,7 @@ func main() {
 
 	router := api.NewRouter(&api.Server{
 		Auth:                 authService,
+		Employee:             employeeService,
 		Docker:               dockerClient,
 		Modules:              moduleManager,
 		Registry:             registry,

@@ -1,22 +1,43 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useAuthStore } from './stores/auth'
-import { useRouter } from 'vue-router'
+import { usePortalStore } from './stores/portal'
+import { useRoute, useRouter } from 'vue-router'
 
 const auth = useAuthStore()
+const portal = usePortalStore()
+const route = useRoute()
 const router = useRouter()
+
+const inPortal = computed(() => route.path.startsWith('/portal'))
 
 async function handleLogout() {
   await auth.logout()
   router.push({ name: 'login' })
 }
+
+async function handlePortalLogout() {
+  await portal.logout()
+  router.push({ name: 'portal-login' })
+}
 </script>
 
 <template>
   <div class="app-shell">
-    <header v-if="auth.email" class="topbar">
+    <header v-if="inPortal && portal.username" class="topbar">
+      <nav>
+        <router-link :to="{ name: 'portal-wiki', params: { pathMatch: [] } }">Wiki</router-link>
+      </nav>
+      <div class="account">
+        <span>{{ portal.username }}</span>
+        <button @click="handlePortalLogout">Log out</button>
+      </div>
+    </header>
+    <header v-else-if="!inPortal && auth.email" class="topbar">
       <nav>
         <router-link to="/">Dashboard</router-link>
         <router-link to="/modules">Module Store</router-link>
+        <router-link to="/wiki-permissions">Wiki Permissions</router-link>
         <router-link to="/settings">Settings</router-link>
       </nav>
       <div class="account">
