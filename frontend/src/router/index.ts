@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
+import { usePortalStore } from '../stores/portal'
 import Login from '../views/Login.vue'
 import Dashboard from '../views/Dashboard.vue'
 import ModuleStore from '../views/ModuleStore.vue'
@@ -7,6 +8,9 @@ import Users from '../views/Users.vue'
 import Vpn from '../views/Vpn.vue'
 import Settings from '../views/Settings.vue'
 import Backup from '../views/Backup.vue'
+import WikiPermissions from '../views/WikiPermissions.vue'
+import PortalLogin from '../views/portal/PortalLogin.vue'
+import Wiki from '../views/portal/Wiki.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -18,10 +22,30 @@ const router = createRouter({
     { path: '/vpn', name: 'vpn', component: Vpn },
     { path: '/settings', name: 'settings', component: Settings },
     { path: '/backup', name: 'backup', component: Backup },
+    { path: '/wiki-permissions', name: 'wiki-permissions', component: WikiPermissions },
+    { path: '/portal/login', name: 'portal-login', component: PortalLogin },
+    { path: '/portal/wiki/:pathMatch(.*)*', name: 'portal-wiki', component: Wiki },
   ],
 })
 
+// The employee portal has its own login and session, entirely separate
+// from the admin's — so it gets its own guard, scoped to /portal/*, that
+// never touches or is touched by the admin auth store.
 router.beforeEach(async (to) => {
+  if (to.path.startsWith('/portal')) {
+    const portal = usePortalStore()
+    if (!portal.checked) {
+      await portal.fetchMe()
+    }
+    if (to.name !== 'portal-login' && !portal.username) {
+      return { name: 'portal-login' }
+    }
+    if (to.name === 'portal-login' && portal.username) {
+      return { name: 'portal-wiki', params: { pathMatch: [] } }
+    }
+    return true
+  }
+
   const auth = useAuthStore()
   if (!auth.checked) {
     await auth.fetchMe()

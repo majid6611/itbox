@@ -132,3 +132,40 @@ export interface BackupRun {
   status: 'running' | 'success' | 'error'
   error_message?: string
 }
+
+export interface PortalMe {
+  username: string
+  group: string
+}
+
+export interface WikiPageSummary {
+  id: number
+  path: string
+  title: string
+}
+
+export interface WikiPage {
+  id: number
+  path: string
+  title: string
+  content: string
+  can_write: boolean
+  updated_at: string
+}
+
+export interface WikiRevision {
+  id: number
+  author: string
+  created_at: string
+}
+
+export interface WikiAttachment {
+  id: number
+  filename: string
+  size_bytes: number
+}
+
+export interface WikiPermissionRule {
+  group: string
+  access: 'read' | 'write'
+}

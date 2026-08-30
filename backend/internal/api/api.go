@@ -11,11 +11,13 @@ import (
 
 	"it-platform/backend/internal/auth"
 	"it-platform/backend/internal/docker"
+	"it-platform/backend/internal/employee"
 	"it-platform/backend/internal/modules"
 )
 
 type Server struct {
 	Auth     *auth.Service
+	Employee *employee.Service
 	Docker   *docker.Client
 	Modules  *modules.Manager
 	Registry *modules.Registry
@@ -41,6 +43,7 @@ func NewRouter(s *Server) http.Handler {
 	registerVpn(api, s)
 	registerSettings(api, s)
 	registerBackup(api, s)
+	registerPortal(api, s)
 
 	s.startBackupScheduler(context.Background())
 
