@@ -36,6 +36,9 @@ export const useChatStore = defineStore('chat', {
     ws: null as WebSocket | null,
     wsConnected: false,
   }),
+  getters: {
+    hasUnread: (state) => Object.values(state.unread).some(Boolean),
+  },
   actions: {
     async fetchChannels() {
       const res = await api.get<{ channels: string[] }>('/portal/chat/channels')
@@ -81,6 +84,16 @@ export const useChatStore = defineStore('chat', {
       form.append('file', file)
       await api.upload('/portal/chat/attachments', form)
     },
+    async editMessage(id: number, content: string) {
+      // Not applied locally here either, same reasoning as sendMessage —
+      // the server echoes the edit back as a message_updated event to
+      // everyone who can see the thread, including the sender's own other
+      // tabs, so there's one path that mutates messagesByTarget, not two.
+      await api.patch(`/portal/chat/messages/${id}`, { content })
+    },
+    async deleteMessage(id: number) {
+      await api.delete(`/portal/chat/messages/${id}`)
+    },
     messagesFor(kind: TargetKind, name: string | number): ChatMessage[] {
       return this.messagesByTarget[targetKey(kind, name)] ?? []
     },
@@ -92,6 +105,28 @@ export const useChatStore = defineStore('chat', {
     setActive(kind: TargetKind, name: string | number) {
       this.activeKey = targetKey(kind, name)
       this.unread[this.activeKey] = false
+    },
+
+    // Browser push notifications are opt-in and only for when the tab is
+    // in the background — a foreground tab already shows the unread dot
+    // and, if it's the open thread, the message itself, so notifying too
+    // would just be noise. Call from a real user gesture (e.g. clicking
+    // an "enable notifications" toggle), not on page load, since browsers
+    // ignore/penalize permission prompts that aren't user-initiated.
+    async requestNotificationPermission() {
+      if (!('Notification' in window)) return
+      await Notification.requestPermission()
+    },
+    notifyNewMessage(m: ChatMessage) {
+      if (!('Notification' in window) || Notification.permission !== 'granted') return
+      if (document.visibilityState === 'visible') return
+      const title = m.group_name ? `#${m.group_name}` : m.sender_username
+      const body = m.attachment ? `📎 ${m.attachment.filename}` : m.content
+      const n = new Notification(title, { body, tag: `chat-${m.sender_username}-${m.group_name ?? ''}` })
+      n.onclick = () => {
+        window.focus()
+        n.close()
+      }
     },
 
     connectWS(myUsername: string) {
@@ -133,6 +168,18 @@ export const useChatStore = defineStore('chat', {
           // delivering bytes into memory nobody's told to look at.
           if (key !== this.activeKey && m.sender_username !== this.myUsername) {
             this.unread[key] = true
+            this.notifyNewMessage(m)
+          }
+        } else if (event.type === 'message_updated' && event.message) {
+          // An edit or a delete on a message already in the thread —
+          // find it by id and replace it in place, same as any other
+          // live-arriving message just without appending.
+          const m = event.message
+          const key = keyForMessage(m, this.myUsername)
+          const list = this.messagesByTarget[key]
+          if (list) {
+            const i = list.findIndex((x) => x.id === m.id)
+            if (i !== -1) list[i] = m
           }
         }
       }

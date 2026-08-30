@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { usePortalStore } from '../../stores/portal'
 import { useChatStore, type TargetKind } from '../../stores/chat'
 
@@ -33,6 +33,34 @@ function insertEmoji(e: string) {
     const pos = start + e.length
     el?.setSelectionRange(pos, pos)
   })
+}
+
+const editingId = ref<number | null>(null)
+const editDraft = ref('')
+
+function startEdit(m: { id: number; content: string }) {
+  editingId.value = m.id
+  editDraft.value = m.content
+}
+function cancelEdit() {
+  editingId.value = null
+  editDraft.value = ''
+}
+async function saveEdit() {
+  const content = editDraft.value.trim()
+  if (!content || editingId.value === null) return
+  await chat.editMessage(editingId.value, content)
+  cancelEdit()
+}
+async function removeMessage(id: number) {
+  if (!confirm('Delete this message? This can\'t be undone.')) return
+  await chat.deleteMessage(id)
+}
+
+const notifPermission = ref<NotificationPermission>('Notification' in window ? Notification.permission : 'denied')
+async function enableNotifications() {
+  await chat.requestNotificationPermission()
+  notifPermission.value = Notification.permission
 }
 
 const showNewGroup = ref(false)
@@ -141,14 +169,13 @@ onMounted(async () => {
     moduleUnavailable.value = true
     return
   }
-  chat.connectWS(portal.username!)
+  // The WebSocket itself is connected app-wide from App.vue (so the nav
+  // badge and notifications work from any portal page) — this page just
+  // needs it to already be up before picking a default thread.
+  if (!chat.wsConnected) chat.connectWS(portal.username!)
   if (chat.channels.length > 0) {
     await selectTarget('group', chat.channels[0])
   }
-})
-
-onBeforeUnmount(() => {
-  chat.disconnectWS()
 })
 </script>
 
@@ -215,9 +242,13 @@ onBeforeUnmount(() => {
             <span class="dot" :class="{ online: chat.isOnline(String(active.name)) }"></span>
             {{ active.name }}
           </h1>
-          <div v-if="active.kind === 'custom'" class="group-actions">
-            <span class="hint-inline">{{ activeGroup?.members.join(', ') }}</span>
-            <button @click="showAddMember = !showAddMember">+ Add person</button>
+          <div class="header-actions">
+            <div v-if="active.kind === 'custom'" class="group-actions">
+              <span class="hint-inline">{{ activeGroup?.members.join(', ') }}</span>
+              <button @click="showAddMember = !showAddMember">+ Add person</button>
+            </div>
+            <button v-if="notifPermission === 'default'" class="notif-btn" @click="enableNotifications">🔔 Enable notifications</button>
+            <span v-else-if="notifPermission === 'denied'" class="hint-inline">Notifications blocked in browser settings</span>
           </div>
         </div>
         <form v-if="showAddMember" class="add-member-form" @submit.prevent="addMember">
@@ -234,11 +265,28 @@ onBeforeUnmount(() => {
             <div class="message-meta">
               <strong>{{ m.sender_username }}</strong>
               <span class="hint-inline">{{ formatTime(m.created_at) }}</span>
+              <span v-if="m.edited_at && !m.deleted_at" class="hint-inline">(edited)</span>
             </div>
-            <p v-if="m.content">{{ m.content }}</p>
-            <a v-if="m.attachment" :href="`/api/portal/chat/attachments/${m.attachment.id}`" target="_blank" rel="noopener" class="attachment-link">
-              📎 {{ m.attachment.filename }} ({{ Math.ceil(m.attachment.size_bytes / 1024) }} KB)
-            </a>
+            <template v-if="m.deleted_at">
+              <p class="deleted-tombstone">This message was deleted</p>
+            </template>
+            <template v-else-if="editingId === m.id">
+              <form class="edit-form" @submit.prevent="saveEdit">
+                <input v-model="editDraft" type="text" autofocus />
+                <button type="submit" :disabled="!editDraft.trim()">Save</button>
+                <button type="button" @click="cancelEdit">Cancel</button>
+              </form>
+            </template>
+            <template v-else>
+              <p v-if="m.content">{{ m.content }}</p>
+              <a v-if="m.attachment" :href="`/api/portal/chat/attachments/${m.attachment.id}`" target="_blank" rel="noopener" class="attachment-link">
+                📎 {{ m.attachment.filename }} ({{ Math.ceil(m.attachment.size_bytes / 1024) }} KB)
+              </a>
+              <div v-if="m.sender_username === portal.username" class="message-actions">
+                <button type="button" @click="startEdit(m)">Edit</button>
+                <button type="button" @click="removeMessage(m.id)">Delete</button>
+              </div>
+            </template>
           </div>
           <p v-if="messages.length === 0" class="hint">No messages yet — say hello.</p>
         </div>
@@ -363,10 +411,46 @@ onBeforeUnmount(() => {
   font-size: 1.2rem;
   margin: 0 0 0.5rem;
 }
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
 .group-actions {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+}
+.notif-btn {
+  font-size: 0.85rem;
+}
+.deleted-tombstone {
+  margin: 0.15rem 0 0;
+  font-style: italic;
+  opacity: 0.6;
+}
+.edit-form {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.15rem;
+}
+.message-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.2rem;
+  opacity: 0.5;
+  font-size: 0.8rem;
+}
+.message-actions button {
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+}
+.message-actions:hover {
+  opacity: 1;
 }
 .add-member-form {
   display: flex;

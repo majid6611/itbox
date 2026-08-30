@@ -16,6 +16,8 @@ type MessageOut struct {
 	CustomGroupID     int64          `json:"custom_group_id,omitempty"`
 	Content           string         `json:"content"`
 	CreatedAt         string         `json:"created_at"`
+	EditedAt          string         `json:"edited_at,omitempty"`
+	DeletedAt         string         `json:"deleted_at,omitempty"`
 	Attachment        *AttachmentOut `json:"attachment,omitempty"`
 }
 

@@ -30,7 +30,11 @@ const (
 )
 
 type Event struct {
-	Type     string       `json:"type"` // "message" | "presence" | "group_invite"
+	// "message" is a newly-sent message; "message_updated" is an edit or a
+	// delete on an existing one (Message.DeletedAt set for a delete) — the
+	// client finds the message by ID in whichever thread it belongs to and
+	// replaces it in place, same shape either way.
+	Type     string       `json:"type"` // "message" | "message_updated" | "presence" | "group_invite"
 	Message  *Message     `json:"message,omitempty"`
 	Presence *Presence    `json:"presence,omitempty"`
 	Group    *GroupInvite `json:"group,omitempty"`
@@ -53,6 +57,8 @@ type Message struct {
 	CustomGroupID      int64       `json:"custom_group_id,omitempty"`
 	Content            string      `json:"content"`
 	CreatedAt          string      `json:"created_at"`
+	EditedAt           string      `json:"edited_at,omitempty"`
+	DeletedAt          string      `json:"deleted_at,omitempty"`
 	Attachment         *Attachment `json:"attachment,omitempty"`
 }
 
