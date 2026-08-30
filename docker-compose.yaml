@@ -52,6 +52,13 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    networks:
+      default: {}
+      # Reachable by module containers too — only feature-modules that
+      # declare needs_database: true in their manifest (see modules/wiki)
+      # actually get the password needed to connect, but the network
+      # itself has to reach this far for that to be possible at all.
+      edge: {}
 
   backend:
     build: ./backend

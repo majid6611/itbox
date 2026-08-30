@@ -10,6 +10,14 @@ server {
     # this server block first).
     client_max_body_size 30m;
 
+    # Feature-modules (wiki, and later chat) that serve specific paths
+    # under this same domain instead of a subdomain of their own — see
+    # PathRoute in modules/manifest.go and proxy.Manager.SetPathRoutes.
+    # nginx picks the longest matching location regardless of include
+    # order, so these always win over the catch-all "/" below when they
+    # match, without needing to appear before it.
+    include /etc/nginx/conf.d/paths/*.conf;
+
     location / {
         proxy_pass http://frontend:80;
         proxy_set_header Host $host;

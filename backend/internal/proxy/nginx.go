@@ -60,6 +60,19 @@ func (m *Manager) confPath(moduleID, routeName string) string {
 	return filepath.Join(m.confDir, moduleID+"__"+routeName+".conf")
 }
 
+// pathsDir holds location-only snippets included from inside the main
+// site's own server block (see nginx/templates/default.conf.template's
+// `include .../paths/*.conf`) — a `location` block isn't valid outside a
+// `server` block, so these can't just be dropped in confDir itself
+// alongside the other modules' whole standalone server blocks.
+func (m *Manager) pathsDir() string {
+	return filepath.Join(m.confDir, "paths")
+}
+
+func (m *Manager) pathRouteConfPath(moduleID string) string {
+	return filepath.Join(m.pathsDir(), moduleID+".conf")
+}
+
 // SetRoutes writes (or overwrites) a module's vhosts, one per RouteTarget,
 // then reloads nginx once.
 //
@@ -148,6 +161,59 @@ func (m *Manager) RemoveRoutes(ctx context.Context, moduleID string) error {
 		if err := os.Remove(f); err != nil && !os.IsNotExist(err) {
 			return fmt.Errorf("remove nginx vhost %s: %w", f, err)
 		}
+	}
+	if err := m.docker.ReloadNginx(ctx, m.containerName); err != nil {
+		return fmt.Errorf("reload nginx: %w", err)
+	}
+	return nil
+}
+
+// PathRouteTarget is one URL-path-prefix -> upstream mapping for a
+// feature-module served under the main site's own domain (see PathRoute
+// in modules/manifest.go).
+type PathRouteTarget struct {
+	Path     string
+	Upstream string
+}
+
+// SetPathRoutes writes (or overwrites) one module's path-based proxy
+// snippet — a location block per path prefix, included from inside the
+// main site's server block — then reloads nginx.
+func (m *Manager) SetPathRoutes(ctx context.Context, moduleID string, targets []PathRouteTarget) error {
+	if err := os.MkdirAll(m.pathsDir(), 0o755); err != nil {
+		return fmt.Errorf("create nginx paths dir: %w", err)
+	}
+	var conf string
+	for _, t := range targets {
+		conf += fmt.Sprintf(`    location %s/ {
+        resolver 127.0.0.11 valid=10s;
+        set $upstream "http://%s";
+        proxy_pass $upstream;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+`, t.Path, t.Upstream)
+	}
+	if err := os.WriteFile(m.pathRouteConfPath(moduleID), []byte(conf), 0o644); err != nil {
+		return fmt.Errorf("write nginx path routes for %s: %w", moduleID, err)
+	}
+	if err := m.docker.ReloadNginx(ctx, m.containerName); err != nil {
+		return fmt.Errorf("reload nginx: %w", err)
+	}
+	return nil
+}
+
+// RemovePathRoutes deletes a module's path-route snippet, if any, and
+// reloads nginx. Safe to call for modules that never had one.
+func (m *Manager) RemovePathRoutes(ctx context.Context, moduleID string) error {
+	f := m.pathRouteConfPath(moduleID)
+	if err := os.Remove(f); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("remove nginx path routes %s: %w", f, err)
 	}
 	if err := m.docker.ReloadNginx(ctx, m.containerName); err != nil {
 		return fmt.Errorf("reload nginx: %w", err)

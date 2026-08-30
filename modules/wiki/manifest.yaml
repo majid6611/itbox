@@ -1,0 +1,26 @@
+id: wiki
+name: Wiki
+description: >-
+  Employee wiki with category/sub/page organization, full revision
+  history, a rich text editor (images, tables, file attachments), search,
+  and per-page group permissions. Employees log in with their own company
+  (LDAP) account — separate from the admin login. Talks straight to this
+  platform's own database rather than running one of its own; creates its
+  tables on install if they don't already exist.
+category: collaboration
+version: "1.0.0"
+compose_file: docker-compose.yaml
+needs_database: true
+soft_dependencies:
+  - id: ldap-openldap
+    integration: directory
+  - id: s3-storage
+    integration: attachments
+path_routes:
+  - path: /api/portal/wiki
+    service: wiki
+    port: 8080
+  - path: /api/wiki
+    service: wiki
+    port: 8080
+internal_panel: /wiki-permissions

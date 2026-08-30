@@ -34,6 +34,18 @@ type Route struct {
 	Port    int    `yaml:"port" json:"port"`
 }
 
+// PathRoute proxies one URL path prefix under the platform's own domain
+// (e.g. "/api/portal/wiki") straight to a module's own service — distinct
+// from Route above, which gets the module a whole subdomain of its own.
+// For a feature-module like wiki, employees/admins need to keep hitting
+// the same paths they always have on the main site, with the module's own
+// container serving them behind the scenes rather than core.
+type PathRoute struct {
+	Path    string `yaml:"path" json:"path"`
+	Service string `yaml:"service" json:"service"`
+	Port    int    `yaml:"port" json:"port"`
+}
+
 type Manifest struct {
 	ID               string           `yaml:"id" json:"id"`
 	Name             string           `yaml:"name" json:"name"`
@@ -44,6 +56,13 @@ type Manifest struct {
 	ConfigSchema     []ConfigField    `yaml:"config_schema" json:"config_schema"`
 	SoftDependencies []SoftDependency `yaml:"soft_dependencies" json:"soft_dependencies"`
 	Routes           []Route          `yaml:"routes" json:"routes,omitempty"`
+	PathRoutes       []PathRoute      `yaml:"path_routes,omitempty" json:"path_routes,omitempty"`
+
+	// NeedsDatabase gets the module DATABASE_URL at install time (the
+	// platform's own shared Postgres) — see Manager.databaseURL's doc
+	// comment for why this exists at all despite modules normally being
+	// data-isolated from core.
+	NeedsDatabase bool `yaml:"needs_database,omitempty" json:"needs_database,omitempty"`
 
 	// InternalPanel is a path in this platform's own frontend (e.g.
 	// "/users") shown as a "Manage" link when the module is running —

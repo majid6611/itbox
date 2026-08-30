@@ -18,7 +18,14 @@ import (
 // manifest can declare new sensitive fields it forgets to mark hidden, or
 // a field can go stale like this — name-based matching is the backstop for
 // both, on top of the precise, intentional manifest-driven redaction.
-var sensitiveConfigKeyHints = []string{"password", "secret", "token", "_key", "apikey"}
+// database_url is here for the same reason management_pat is declared
+// hidden in vpn-netbird's manifest: it's injected by doInstall for any
+// module with needs_database: true (see modules/manifest.go), never
+// something a module declares as a real ConfigSchema field, so the
+// schema-driven check has nothing to match it against either — caught
+// live during the wiki module's first install, where it briefly leaked
+// the platform's own Postgres password over this endpoint.
+var sensitiveConfigKeyHints = []string{"password", "secret", "token", "_key", "apikey", "database_url"}
 
 func looksSensitive(key string) bool {
 	lower := strings.ToLower(key)
