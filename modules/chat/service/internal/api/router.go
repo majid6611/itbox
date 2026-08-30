@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"log"
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -51,6 +52,15 @@ func NewRouter(s *Server) http.Handler {
 	return router
 }
 
+// internalError logs the real cause server-side and returns a generic 500
+// to the client — the raw error text (a DB/LDAP/S3 driver message) can
+// reveal internal infrastructure details and has no reason to leave this
+// process for a failure the caller didn't cause.
+func internalError(msg string, err error) huma.StatusError {
+	log.Printf("%s: %v", msg, err)
+	return huma.Error500InternalServerError(msg)
+}
+
 func (s *Server) requireEmployeeAuth(ctx context.Context, sessionToken string) (string, error) {
 	username, err := auth.ValidateEmployeeSession(ctx, s.DB, sessionToken)
 	if err != nil {
@@ -74,7 +84,7 @@ func (s *Server) employeeGroup(ctx context.Context, username string) (string, er
 func (s *Server) requireChannelMember(ctx context.Context, username, group string) error {
 	myGroup, err := s.employeeGroup(ctx, username)
 	if err != nil {
-		return huma.Error500InternalServerError("check group membership", err)
+		return internalError("check group membership", err)
 	}
 	if myGroup == "" || myGroup != group {
 		return huma.Error403Forbidden("you're not a member of this channel")

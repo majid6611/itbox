@@ -147,11 +147,11 @@ func registerVpn(api huma.API, s *Server) {
 
 		dirClient, dirAvailable, err := s.directoryClient(ctx)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("check identity module", err)
+			return nil, internalError("check identity module", err)
 		}
 		nb, nbAvailable, err := s.netbirdClient(ctx)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("check vpn module", err)
+			return nil, internalError("check vpn module", err)
 		}
 		out.Body.Available = dirAvailable && nbAvailable
 		out.Body.DomainConfigured = s.domainConfigured()
@@ -161,24 +161,24 @@ func registerVpn(api huma.API, s *Server) {
 
 		devices, err := nb.ListPeers(ctx)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("list connected devices", err)
+			return nil, internalError("list connected devices", err)
 		}
 		out.Body.Devices = devices
 
 		users, err := dirClient.ListUsers()
 		if err != nil {
-			return nil, huma.Error500InternalServerError("list users", err)
+			return nil, internalError("list users", err)
 		}
 		rows, err := s.DB.Query(ctx, `SELECT username FROM vpn_access`)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("list vpn access", err)
+			return nil, internalError("list vpn access", err)
 		}
 		defer rows.Close()
 		hasAccess := make(map[string]bool)
 		for rows.Next() {
 			var u string
 			if err := rows.Scan(&u); err != nil {
-				return nil, huma.Error500InternalServerError("scan vpn access", err)
+				return nil, internalError("scan vpn access", err)
 			}
 			hasAccess[u] = true
 		}
@@ -203,14 +203,14 @@ func registerVpn(api huma.API, s *Server) {
 		}
 		nb, available, err := s.netbirdClient(ctx)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("check vpn module", err)
+			return nil, internalError("check vpn module", err)
 		}
 		if !available {
 			return nil, huma.Error400BadRequest("install the VPN module first (or it's still finishing setup — try again in a minute)")
 		}
 		key, err := nb.CreateSetupKey(ctx, in.Username)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("create setup key", err)
+			return nil, internalError("create setup key", err)
 		}
 		_, err = s.DB.Exec(ctx, `
 			INSERT INTO vpn_access (username, setup_key_id, setup_key)
@@ -218,7 +218,7 @@ func registerVpn(api huma.API, s *Server) {
 			ON CONFLICT (username) DO UPDATE SET setup_key_id = $2, setup_key = $3, created_at = now()
 		`, in.Username, key.ID, key.Key)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("record vpn access", err)
+			return nil, internalError("record vpn access", err)
 		}
 		out := &EnableVpnOutput{}
 		out.Body.Success = true
@@ -237,7 +237,7 @@ func registerVpn(api huma.API, s *Server) {
 		}
 		nb, available, err := s.netbirdClient(ctx)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("check vpn module", err)
+			return nil, internalError("check vpn module", err)
 		}
 		if !available {
 			return nil, huma.Error400BadRequest("install the VPN module first")
@@ -250,7 +250,7 @@ func registerVpn(api huma.API, s *Server) {
 			}
 		}
 		if _, err := s.DB.Exec(ctx, `DELETE FROM vpn_access WHERE username = $1`, in.Username); err != nil {
-			return nil, huma.Error500InternalServerError("remove vpn access record", err)
+			return nil, internalError("remove vpn access record", err)
 		}
 		out := &ModuleActionOutput{}
 		out.Body.Success = true

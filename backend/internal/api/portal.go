@@ -120,7 +120,7 @@ func registerPortal(api huma.API, s *Server) {
 		}
 		dirClient, available, err := s.directoryClient(ctx)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("check identity module", err)
+			return nil, internalError("check identity module", err)
 		}
 		if !available {
 			return nil, huma.Error400BadRequest("the Identity module isn't installed yet")

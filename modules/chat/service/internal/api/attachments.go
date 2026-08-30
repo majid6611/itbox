@@ -87,7 +87,7 @@ func registerAttachments(api huma.API, s *Server) {
 		if data.CustomGroupID != 0 {
 			isMember, err := s.isGroupMember(ctx, data.CustomGroupID, username)
 			if err != nil {
-				return nil, huma.Error500InternalServerError("check membership", err)
+				return nil, internalError("check membership", err)
 			}
 			if !isMember {
 				return nil, huma.Error403Forbidden("you're not a member of this group")
@@ -96,7 +96,7 @@ func registerAttachments(api huma.API, s *Server) {
 
 		s3, available, err := s.chatS3Client(ctx)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("check backup storage", err)
+			return nil, internalError("check backup storage", err)
 		}
 		if !available {
 			return nil, huma.Error400BadRequest("install the Backup Storage module first — attachments are stored there")
@@ -112,13 +112,13 @@ func registerAttachments(api huma.API, s *Server) {
 
 		msg, err := s.insertMessage(ctx, username, data.GroupName, data.RecipientUsername, data.CustomGroupID, data.Caption)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("save message", err)
+			return nil, internalError("save message", err)
 		}
 
 		filename := data.File.Filename
 		key := fmt.Sprintf("chat/%d/%s", msg.ID, filename)
 		if err := s3.Upload(ctx, key, bytes.NewReader(fileBytes), uploadContentType(fileBytes)); err != nil {
-			return nil, huma.Error500InternalServerError("upload attachment", err)
+			return nil, internalError("upload attachment", err)
 		}
 
 		var a AttachmentOut
@@ -127,12 +127,12 @@ func registerAttachments(api huma.API, s *Server) {
 			VALUES ($1, $2, $3, $4, $5) RETURNING id, filename, size_bytes
 		`, msg.ID, filename, key, len(fileBytes), username).Scan(&a.ID, &a.Filename, &a.Size)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("record attachment", err)
+			return nil, internalError("record attachment", err)
 		}
 		msg.Attachment = &a
 
 		if err := s.pushMessage(ctx, msg); err != nil {
-			return nil, huma.Error500InternalServerError("deliver message", err)
+			return nil, internalError("deliver message", err)
 		}
 
 		out := &UploadAttachmentOutput{Body: *msg}
@@ -169,7 +169,7 @@ func registerAttachments(api huma.API, s *Server) {
 		if customGroupID != nil {
 			isMember, err := s.isGroupMember(ctx, *customGroupID, username)
 			if err != nil {
-				return nil, huma.Error500InternalServerError("check membership", err)
+				return nil, internalError("check membership", err)
 			}
 			if !isMember {
 				return nil, huma.Error403Forbidden("you're not a member of this group")
@@ -178,14 +178,14 @@ func registerAttachments(api huma.API, s *Server) {
 
 		s3, available, err := s.chatS3Client(ctx)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("check backup storage", err)
+			return nil, internalError("check backup storage", err)
 		}
 		if !available {
 			return nil, huma.Error500InternalServerError("attachment storage unavailable", nil)
 		}
 		body, contentType, err := s3.Download(ctx, key)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("download attachment", err)
+			return nil, internalError("download attachment", err)
 		}
 
 		return &huma.StreamResponse{

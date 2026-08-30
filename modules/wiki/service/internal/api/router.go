@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"log"
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -43,6 +44,15 @@ func NewRouter(s *Server) http.Handler {
 	registerPermissions(api, s)
 
 	return router
+}
+
+// internalError logs the real cause server-side and returns a generic 500
+// to the client — the raw error text (a DB/LDAP/S3 driver message) can
+// reveal internal infrastructure details and has no reason to leave this
+// process for a failure the caller didn't cause.
+func internalError(msg string, err error) huma.StatusError {
+	log.Printf("%s: %v", msg, err)
+	return huma.Error500InternalServerError(msg)
 }
 
 // requireEmployeeAuth validates the employee portal's session cookie —

@@ -60,7 +60,7 @@ func registerCustomGroups(api huma.API, s *Server) {
 		}
 		groups, err := s.myCustomGroups(ctx, username)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("list groups", err)
+			return nil, internalError("list groups", err)
 		}
 		out := &ListMyGroupsOutput{}
 		out.Body.Groups = groups
@@ -83,7 +83,7 @@ func registerCustomGroups(api huma.API, s *Server) {
 		}
 		realUsers, err := s.realUsernames(ctx)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("check directory", err)
+			return nil, internalError("check directory", err)
 		}
 		for _, m := range in.Body.Members {
 			if m = strings.TrimSpace(m); m != "" && !realUsers[m] {
@@ -93,13 +93,13 @@ func registerCustomGroups(api huma.API, s *Server) {
 
 		tx, err := s.DB.Begin(ctx)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("begin transaction", err)
+			return nil, internalError("begin transaction", err)
 		}
 		defer tx.Rollback(ctx)
 
 		var groupID int64
 		if err := tx.QueryRow(ctx, `INSERT INTO chat_custom_groups (name, created_by) VALUES ($1, $2) RETURNING id`, name, username).Scan(&groupID); err != nil {
-			return nil, huma.Error500InternalServerError("create group", err)
+			return nil, internalError("create group", err)
 		}
 		members := map[string]bool{username: true} // creator is always a member
 		for _, m := range in.Body.Members {
@@ -110,11 +110,11 @@ func registerCustomGroups(api huma.API, s *Server) {
 		}
 		for m := range members {
 			if _, err := tx.Exec(ctx, `INSERT INTO chat_group_members (group_id, username) VALUES ($1, $2)`, groupID, m); err != nil {
-				return nil, huma.Error500InternalServerError("add member", err)
+				return nil, internalError("add member", err)
 			}
 		}
 		if err := tx.Commit(ctx); err != nil {
-			return nil, huma.Error500InternalServerError("commit", err)
+			return nil, internalError("commit", err)
 		}
 
 		memberList := make([]string, 0, len(members))
@@ -150,20 +150,20 @@ func registerCustomGroups(api huma.API, s *Server) {
 		}
 		realUsers, err := s.realUsernames(ctx)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("check directory", err)
+			return nil, internalError("check directory", err)
 		}
 		if !realUsers[newMember] {
 			return nil, huma.Error400BadRequest("no such employee: " + newMember)
 		}
 		isMember, err := s.isGroupMember(ctx, in.ID, username)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("check membership", err)
+			return nil, internalError("check membership", err)
 		}
 		if !isMember {
 			return nil, huma.Error403Forbidden("you're not a member of this group")
 		}
 		if _, err := s.DB.Exec(ctx, `INSERT INTO chat_group_members (group_id, username) VALUES ($1, $2) ON CONFLICT DO NOTHING`, in.ID, newMember); err != nil {
-			return nil, huma.Error500InternalServerError("add member", err)
+			return nil, internalError("add member", err)
 		}
 		var groupName string
 		if err := s.DB.QueryRow(ctx, `SELECT name FROM chat_custom_groups WHERE id = $1`, in.ID).Scan(&groupName); err == nil {

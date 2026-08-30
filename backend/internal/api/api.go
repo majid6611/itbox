@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"log"
 	"net/http"
 	"time"
 
@@ -93,6 +94,17 @@ func rateLimitKey(clientIP string) string {
 		return "unknown"
 	}
 	return clientIP
+}
+
+// internalError logs the real cause server-side and returns a generic 500
+// to the client — the raw error text (a DB/LDAP/Docker driver message) can
+// reveal internal infrastructure details and has no reason to leave this
+// process for a failure the caller didn't cause. Use this instead of
+// huma.Error500InternalServerError(msg, err) everywhere; that form puts
+// err.Error() directly in the HTTP response body.
+func internalError(msg string, err error) huma.StatusError {
+	log.Printf("%s: %v", msg, err)
+	return huma.Error500InternalServerError(msg)
 }
 
 // requireAuth validates a session cookie value, returning the admin's

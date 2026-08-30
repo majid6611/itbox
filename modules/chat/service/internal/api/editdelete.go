@@ -58,13 +58,13 @@ func registerEditDelete(api huma.API, s *Server) {
 			UPDATE chat_messages SET content = $1, edited_at = now() WHERE id = $2 RETURNING edited_at
 		`, content, in.ID).Scan(&editedAt)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("save edit", err)
+			return nil, internalError("save edit", err)
 		}
 		msg.Content = content
 		msg.EditedAt = editedAt.Format(time.RFC3339)
 
 		if err := s.pushUpdate(ctx, msg); err != nil {
-			return nil, huma.Error500InternalServerError("deliver edit", err)
+			return nil, internalError("deliver edit", err)
 		}
 		return &EditMessageOutput{Body: *msg}, nil
 	})
@@ -90,7 +90,7 @@ func registerEditDelete(api huma.API, s *Server) {
 
 		if msg.Attachment != nil {
 			if err := s.deleteAttachment(ctx, msg.Attachment.ID); err != nil {
-				return nil, huma.Error500InternalServerError("remove attachment", err)
+				return nil, internalError("remove attachment", err)
 			}
 			msg.Attachment = nil
 		}
@@ -100,13 +100,13 @@ func registerEditDelete(api huma.API, s *Server) {
 			UPDATE chat_messages SET content = '', deleted_at = now() WHERE id = $1 RETURNING deleted_at
 		`, in.ID).Scan(&deletedAt)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("delete message", err)
+			return nil, internalError("delete message", err)
 		}
 		msg.Content = ""
 		msg.DeletedAt = deletedAt.Format(time.RFC3339)
 
 		if err := s.pushUpdate(ctx, msg); err != nil {
-			return nil, huma.Error500InternalServerError("deliver delete", err)
+			return nil, internalError("deliver delete", err)
 		}
 		return &DeleteMessageOutput{Body: *msg}, nil
 	})
@@ -150,7 +150,7 @@ func (s *Server) loadMessageForMutation(ctx context.Context, id int64, username 
 
 	attachments, err := s.attachmentsFor(ctx, []int64{m.ID})
 	if err != nil {
-		return nil, huma.Error500InternalServerError("load attachment", err)
+		return nil, internalError("load attachment", err)
 	}
 	if a, ok := attachments[m.ID]; ok {
 		m.Attachment = &a

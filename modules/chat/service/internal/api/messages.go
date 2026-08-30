@@ -82,7 +82,7 @@ func registerMessages(api huma.API, s *Server) {
 		if in.CustomGroup != 0 {
 			isMember, err := s.isGroupMember(ctx, in.CustomGroup, username)
 			if err != nil {
-				return nil, huma.Error500InternalServerError("check membership", err)
+				return nil, internalError("check membership", err)
 			}
 			if !isMember {
 				return nil, huma.Error403Forbidden("you're not a member of this group")
@@ -91,7 +91,7 @@ func registerMessages(api huma.API, s *Server) {
 
 		messages, err := s.fetchMessages(ctx, username, in.Group, in.With, in.CustomGroup, in.After)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("load messages", err)
+			return nil, internalError("load messages", err)
 		}
 		out := &GetMessagesOutput{}
 		out.Body.Messages = messages
@@ -123,7 +123,7 @@ func registerMessages(api huma.API, s *Server) {
 		if in.Body.CustomGroupID != 0 {
 			isMember, err := s.isGroupMember(ctx, in.Body.CustomGroupID, username)
 			if err != nil {
-				return nil, huma.Error500InternalServerError("check membership", err)
+				return nil, internalError("check membership", err)
 			}
 			if !isMember {
 				return nil, huma.Error403Forbidden("you're not a member of this group")
@@ -132,10 +132,10 @@ func registerMessages(api huma.API, s *Server) {
 
 		msg, err := s.insertMessage(ctx, username, in.Body.GroupName, in.Body.RecipientUsername, in.Body.CustomGroupID, content)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("save message", err)
+			return nil, internalError("save message", err)
 		}
 		if err := s.pushMessage(ctx, msg); err != nil {
-			return nil, huma.Error500InternalServerError("deliver message", err)
+			return nil, internalError("deliver message", err)
 		}
 
 		out := &SendMessageOutput{Body: *msg}

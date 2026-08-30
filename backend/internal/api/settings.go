@@ -56,7 +56,7 @@ func registerSettings(api huma.API, s *Server) {
 			return nil, huma.Error400BadRequest("just the domain, e.g. company.example.com — no https://, no path, no port")
 		}
 		if err := s.Modules.SetBaseDomain(ctx, domain); err != nil {
-			return nil, huma.Error500InternalServerError("save domain", err)
+			return nil, internalError("save domain", err)
 		}
 		out := &GetSettingsOutput{}
 		out.Body.BaseDomain = domain

@@ -47,7 +47,7 @@ func registerChannels(api huma.API, s *Server) {
 		}
 		group, err := s.employeeGroup(ctx, username)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("look up group", err)
+			return nil, internalError("look up group", err)
 		}
 		out := &ListChannelsOutput{}
 		if group != "" {
@@ -68,7 +68,7 @@ func registerChannels(api huma.API, s *Server) {
 		}
 		usernames, err := directory.ListUsers(ctx, s.DB)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("list users", err)
+			return nil, internalError("list users", err)
 		}
 		out := &ListUsersOutput{}
 		for _, u := range usernames {

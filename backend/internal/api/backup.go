@@ -248,7 +248,7 @@ func registerBackup(api huma.API, s *Server) {
 		}
 		cfg, err := s.getBackupConfig(ctx)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("load backup config", err)
+			return nil, internalError("load backup config", err)
 		}
 		cfg.AWSSecretAccessKey = "" // never echo the secret back
 		out := &GetBackupConfigOutput{Body: cfg}
@@ -280,7 +280,7 @@ func registerBackup(api huma.API, s *Server) {
 			}
 		}
 		if err := s.saveBackupConfig(ctx, in.Body); err != nil {
-			return nil, huma.Error500InternalServerError("save backup config", err)
+			return nil, internalError("save backup config", err)
 		}
 		out := &ModuleActionOutput{}
 		out.Body.Success = true
@@ -331,7 +331,7 @@ func registerBackup(api huma.API, s *Server) {
 			FROM backup_runs ORDER BY started_at DESC LIMIT 20
 		`)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("list backup runs", err)
+			return nil, internalError("list backup runs", err)
 		}
 		defer rows.Close()
 		out := &ListBackupRunsOutput{}
@@ -340,7 +340,7 @@ func registerBackup(api huma.API, s *Server) {
 			var startedAt time.Time
 			var finishedAt *time.Time
 			if err := rows.Scan(&r.Kind, &startedAt, &finishedAt, &r.Status, &r.ErrorMessage); err != nil {
-				return nil, huma.Error500InternalServerError("scan backup run", err)
+				return nil, internalError("scan backup run", err)
 			}
 			r.StartedAt = startedAt.Format(time.RFC3339)
 			if finishedAt != nil {
