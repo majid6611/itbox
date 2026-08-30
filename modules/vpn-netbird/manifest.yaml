@@ -36,6 +36,20 @@ config_schema:
     type: secret
     default: ""
     hidden: true
+  # Not an install-time field — never asked for or set from the install
+  # form, and deliberately NOT type: secret (that auto-generates a random
+  # value for any blank field at install time — see Manager.Install — which
+  # would immediately give this a garbage non-empty value and break the
+  # `management_pat == ""` check bootstrapNetbird/netbirdClient use to
+  # detect "bootstrap not finished yet"). It's written into this module's
+  # config after the fact, once bootstrapNetbird actually has a real token.
+  # Declared here (hidden, plain string) purely so the API's config
+  # redaction knows to strip it from responses — see redactSecretConfig.
+  - key: management_pat
+    label: Internal NetBird management API token
+    type: string
+    default: ""
+    hidden: true
 soft_dependencies:
   - id: ldap-openldap
     integration: directory

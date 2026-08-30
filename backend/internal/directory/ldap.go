@@ -25,8 +25,13 @@ func NewClient(addr, bindDN, password, baseDN string) *Client {
 
 func (c *Client) peopleOU() string { return "ou=people," + c.baseDN }
 
+// userDN builds a user's DN. username is escaped per RFC 4514 before being
+// embedded — without this, a username containing DN metacharacters
+// (",", "+", etc.) could alter which entry the resulting DN actually
+// resolves to. This matters most for VerifyPassword below, which builds a
+// DN straight from an unauthenticated employee-portal login attempt.
 func (c *Client) userDN(username string) string {
-	return fmt.Sprintf("uid=%s,%s", username, c.peopleOU())
+	return fmt.Sprintf("uid=%s,%s", ldap.EscapeDN(username), c.peopleOU())
 }
 
 func (c *Client) connect() (*ldap.Conn, error) {
