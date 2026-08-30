@@ -178,8 +178,16 @@ async function loadPage(path: string) {
 
 watch(activePath, (p) => loadPage(p), { immediate: true })
 
+const moduleUnavailable = ref(false)
+
 async function refreshPages() {
-  await wiki.fetchPages()
+  try {
+    await wiki.fetchPages()
+  } catch {
+    // Most likely the wiki module isn't installed — its path route
+    // wouldn't exist, so this request 404s before ever reaching it.
+    moduleUnavailable.value = true
+  }
 }
 refreshPages()
 
@@ -326,7 +334,10 @@ watch(
 </script>
 
 <template>
-  <div class="wiki-layout">
+  <div v-if="moduleUnavailable" class="empty-state">
+    <p>The wiki isn't available right now — ask your admin to check whether the Wiki module is installed.</p>
+  </div>
+  <div v-else class="wiki-layout">
     <aside class="sidebar">
       <input v-model="searchQuery" type="search" class="search-box" placeholder="Search pages…" />
       <ul v-if="searchQuery.trim()" class="search-results">
