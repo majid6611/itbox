@@ -69,7 +69,7 @@ func registerAuth(api huma.API, s *Server) {
 			if err == auth.ErrInvalidCredentials {
 				return nil, huma.Error401Unauthorized("invalid email or password")
 			}
-			return nil, huma.Error500InternalServerError("login failed", err)
+			return nil, internalError("login failed", err)
 		}
 		s.adminLoginLimiter.Reset(key)
 		out := &LoginOutput{}

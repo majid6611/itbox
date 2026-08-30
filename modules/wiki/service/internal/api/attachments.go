@@ -85,14 +85,14 @@ func registerAttachments(api huma.API, s *Server) {
 
 		pageID, _, ok, err := s.getPageByPath(ctx, data.Path)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("load page", err)
+			return nil, internalError("load page", err)
 		}
 		if !ok {
 			return nil, huma.Error404NotFound("no such page")
 		}
 		canWrite, err := s.wikiPageAccess(ctx, pageID, group, false, true)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("check access", err)
+			return nil, internalError("check access", err)
 		}
 		if !canWrite {
 			return nil, huma.Error403Forbidden("you don't have write access to this page")
@@ -100,7 +100,7 @@ func registerAttachments(api huma.API, s *Server) {
 
 		s3, available, err := s.wikiS3Client(ctx)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("check backup storage", err)
+			return nil, internalError("check backup storage", err)
 		}
 		if !available {
 			return nil, huma.Error400BadRequest("install the Backup Storage module first — attachments are stored there")
@@ -116,7 +116,7 @@ func registerAttachments(api huma.API, s *Server) {
 		filename := data.File.Filename
 		key := fmt.Sprintf("wiki/%d/%s", pageID, filename)
 		if err := s3.Upload(ctx, key, bytes.NewReader(fileBytes), uploadContentType(fileBytes)); err != nil {
-			return nil, huma.Error500InternalServerError("upload attachment", err)
+			return nil, internalError("upload attachment", err)
 		}
 
 		var a WikiAttachment
@@ -125,7 +125,7 @@ func registerAttachments(api huma.API, s *Server) {
 			VALUES ($1, $2, $3, $4, $5) RETURNING id, filename, size_bytes
 		`, pageID, filename, key, len(fileBytes), username).Scan(&a.ID, &a.Filename, &a.Size)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("record attachment", err)
+			return nil, internalError("record attachment", err)
 		}
 
 		out := &UploadWikiAttachmentOutput{Body: a}
@@ -146,14 +146,14 @@ func registerAttachments(api huma.API, s *Server) {
 
 		pageID, _, ok, err := s.getPageByPath(ctx, in.Path)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("load page", err)
+			return nil, internalError("load page", err)
 		}
 		if !ok {
 			return nil, huma.Error404NotFound("no such page")
 		}
 		canRead, err := s.wikiPageAccess(ctx, pageID, group, false, false)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("check access", err)
+			return nil, internalError("check access", err)
 		}
 		if !canRead {
 			return nil, huma.Error403Forbidden("you don't have access to this page")
@@ -161,14 +161,14 @@ func registerAttachments(api huma.API, s *Server) {
 
 		rows, err := s.DB.Query(ctx, `SELECT id, filename, size_bytes FROM wiki_attachments WHERE page_id = $1 ORDER BY uploaded_at DESC`, pageID)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("list attachments", err)
+			return nil, internalError("list attachments", err)
 		}
 		defer rows.Close()
 		out := &ListWikiAttachmentsOutput{}
 		for rows.Next() {
 			var a WikiAttachment
 			if err := rows.Scan(&a.ID, &a.Filename, &a.Size); err != nil {
-				return nil, huma.Error500InternalServerError("scan attachment", err)
+				return nil, internalError("scan attachment", err)
 			}
 			out.Body.Attachments = append(out.Body.Attachments, a)
 		}
@@ -196,7 +196,7 @@ func registerAttachments(api huma.API, s *Server) {
 		}
 		canRead, err := s.wikiPageAccess(ctx, pageID, group, false, false)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("check access", err)
+			return nil, internalError("check access", err)
 		}
 		if !canRead {
 			return nil, huma.Error403Forbidden("you don't have access to this page")
@@ -204,14 +204,14 @@ func registerAttachments(api huma.API, s *Server) {
 
 		s3, available, err := s.wikiS3Client(ctx)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("check backup storage", err)
+			return nil, internalError("check backup storage", err)
 		}
 		if !available {
 			return nil, huma.Error500InternalServerError("attachment storage unavailable", nil)
 		}
 		body, contentType, err := s3.Download(ctx, key)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("download attachment", err)
+			return nil, internalError("download attachment", err)
 		}
 
 		return &huma.StreamResponse{

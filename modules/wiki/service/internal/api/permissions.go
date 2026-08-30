@@ -51,14 +51,14 @@ func registerPermissions(api huma.API, s *Server) {
 		}
 		rows, err := s.DB.Query(ctx, `SELECT id, path, title FROM wiki_pages ORDER BY path`)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("list pages", err)
+			return nil, internalError("list pages", err)
 		}
 		defer rows.Close()
 		out := &ListAllWikiPagesOutput{}
 		for rows.Next() {
 			var p WikiPageSummary
 			if err := rows.Scan(&p.ID, &p.Path, &p.Title); err != nil {
-				return nil, huma.Error500InternalServerError("scan page", err)
+				return nil, internalError("scan page", err)
 			}
 			out.Body.Pages = append(out.Body.Pages, p)
 		}
@@ -76,21 +76,21 @@ func registerPermissions(api huma.API, s *Server) {
 		}
 		pageID, _, ok, err := s.getPageByPath(ctx, in.Path)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("load page", err)
+			return nil, internalError("load page", err)
 		}
 		if !ok {
 			return nil, huma.Error404NotFound("no such page")
 		}
 		rows, err := s.DB.Query(ctx, `SELECT group_name, access FROM wiki_permissions WHERE page_id = $1 ORDER BY group_name`, pageID)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("list permissions", err)
+			return nil, internalError("list permissions", err)
 		}
 		defer rows.Close()
 		out := &GetWikiPermissionsOutput{}
 		for rows.Next() {
 			var r WikiPermissionRule
 			if err := rows.Scan(&r.Group, &r.Access); err != nil {
-				return nil, huma.Error500InternalServerError("scan permission", err)
+				return nil, internalError("scan permission", err)
 			}
 			out.Body.Rules = append(out.Body.Rules, r)
 		}
@@ -108,7 +108,7 @@ func registerPermissions(api huma.API, s *Server) {
 		}
 		pageID, _, ok, err := s.getPageByPath(ctx, in.Body.Path)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("load page", err)
+			return nil, internalError("load page", err)
 		}
 		if !ok {
 			return nil, huma.Error404NotFound("no such page")
@@ -121,19 +121,19 @@ func registerPermissions(api huma.API, s *Server) {
 
 		tx, err := s.DB.Begin(ctx)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("begin transaction", err)
+			return nil, internalError("begin transaction", err)
 		}
 		defer tx.Rollback(ctx)
 		if _, err := tx.Exec(ctx, `DELETE FROM wiki_permissions WHERE page_id = $1`, pageID); err != nil {
-			return nil, huma.Error500InternalServerError("clear permissions", err)
+			return nil, internalError("clear permissions", err)
 		}
 		for _, r := range in.Body.Rules {
 			if _, err := tx.Exec(ctx, `INSERT INTO wiki_permissions (page_id, group_name, access) VALUES ($1, $2, $3)`, pageID, r.Group, r.Access); err != nil {
-				return nil, huma.Error500InternalServerError("save permission", err)
+				return nil, internalError("save permission", err)
 			}
 		}
 		if err := tx.Commit(ctx); err != nil {
-			return nil, huma.Error500InternalServerError("commit", err)
+			return nil, internalError("commit", err)
 		}
 
 		out := &ActionOutput{}

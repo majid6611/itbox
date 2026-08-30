@@ -105,7 +105,7 @@ func registerWiki(api huma.API, s *Server) {
 
 		rows, err := s.DB.Query(ctx, `SELECT id, path, title FROM wiki_pages ORDER BY path`)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("list pages", err)
+			return nil, internalError("list pages", err)
 		}
 		defer rows.Close()
 
@@ -113,11 +113,11 @@ func registerWiki(api huma.API, s *Server) {
 		for rows.Next() {
 			var p WikiPageSummary
 			if err := rows.Scan(&p.ID, &p.Path, &p.Title); err != nil {
-				return nil, huma.Error500InternalServerError("scan page", err)
+				return nil, internalError("scan page", err)
 			}
 			canRead, err := s.wikiPageAccess(ctx, p.ID, group, false, false)
 			if err != nil {
-				return nil, huma.Error500InternalServerError("check access", err)
+				return nil, internalError("check access", err)
 			}
 			if canRead {
 				out.Body.Pages = append(out.Body.Pages, p)
@@ -140,21 +140,21 @@ func registerWiki(api huma.API, s *Server) {
 
 		id, title, ok, err := s.getPageByPath(ctx, in.Path)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("load page", err)
+			return nil, internalError("load page", err)
 		}
 		if !ok {
 			return nil, huma.Error404NotFound("no such page")
 		}
 		canRead, err := s.wikiPageAccess(ctx, id, group, false, false)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("check access", err)
+			return nil, internalError("check access", err)
 		}
 		if !canRead {
 			return nil, huma.Error403Forbidden("you don't have access to this page")
 		}
 		canWrite, err := s.wikiPageAccess(ctx, id, group, false, true)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("check access", err)
+			return nil, internalError("check access", err)
 		}
 
 		var content string
@@ -163,7 +163,7 @@ func registerWiki(api huma.API, s *Server) {
 			SELECT content, created_at FROM wiki_revisions WHERE page_id = $1 ORDER BY created_at DESC LIMIT 1
 		`, id).Scan(&content, &updatedAt)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("load content", err)
+			return nil, internalError("load content", err)
 		}
 
 		out := &GetWikiPageOutput{}
@@ -192,18 +192,18 @@ func registerWiki(api huma.API, s *Server) {
 
 		id, _, exists, err := s.getPageByPath(ctx, path)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("load page", err)
+			return nil, internalError("load page", err)
 		}
 		if exists {
 			canWrite, err := s.wikiPageAccess(ctx, id, group, false, true)
 			if err != nil {
-				return nil, huma.Error500InternalServerError("check access", err)
+				return nil, internalError("check access", err)
 			}
 			if !canWrite {
 				return nil, huma.Error403Forbidden("you don't have write access to this page")
 			}
 			if _, err := s.DB.Exec(ctx, `UPDATE wiki_pages SET title = $2, updated_at = now() WHERE id = $1`, id, in.Body.Title); err != nil {
-				return nil, huma.Error500InternalServerError("update page", err)
+				return nil, internalError("update page", err)
 			}
 		} else {
 			// New pages are open to create — matches "no config needed
@@ -211,12 +211,13 @@ func registerWiki(api huma.API, s *Server) {
 			// check permissions against yet, since the page doesn't exist.
 			err = s.DB.QueryRow(ctx, `INSERT INTO wiki_pages (path, title) VALUES ($1, $2) RETURNING id`, path, in.Body.Title).Scan(&id)
 			if err != nil {
-				return nil, huma.Error500InternalServerError("create page", err)
+				return nil, internalError("create page", err)
 			}
 		}
 
-		if _, err := s.DB.Exec(ctx, `INSERT INTO wiki_revisions (page_id, content, author) VALUES ($1, $2, $3)`, id, in.Body.Content, username); err != nil {
-			return nil, huma.Error500InternalServerError("save revision", err)
+		content := sanitizeWikiContent(in.Body.Content)
+		if _, err := s.DB.Exec(ctx, `INSERT INTO wiki_revisions (page_id, content, author) VALUES ($1, $2, $3)`, id, content, username); err != nil {
+			return nil, internalError("save revision", err)
 		}
 
 		out := &SaveWikiPageOutput{}
@@ -239,14 +240,14 @@ func registerWiki(api huma.API, s *Server) {
 
 		id, _, ok, err := s.getPageByPath(ctx, in.Path)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("load page", err)
+			return nil, internalError("load page", err)
 		}
 		if !ok {
 			return nil, huma.Error404NotFound("no such page")
 		}
 		canRead, err := s.wikiPageAccess(ctx, id, group, false, false)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("check access", err)
+			return nil, internalError("check access", err)
 		}
 		if !canRead {
 			return nil, huma.Error403Forbidden("you don't have access to this page")
@@ -254,7 +255,7 @@ func registerWiki(api huma.API, s *Server) {
 
 		rows, err := s.DB.Query(ctx, `SELECT id, author, created_at FROM wiki_revisions WHERE page_id = $1 ORDER BY created_at DESC`, id)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("list revisions", err)
+			return nil, internalError("list revisions", err)
 		}
 		defer rows.Close()
 		out := &ListWikiRevisionsOutput{}
@@ -262,7 +263,7 @@ func registerWiki(api huma.API, s *Server) {
 			var r WikiRevision
 			var createdAt time.Time
 			if err := rows.Scan(&r.ID, &r.Author, &createdAt); err != nil {
-				return nil, huma.Error500InternalServerError("scan revision", err)
+				return nil, internalError("scan revision", err)
 			}
 			r.CreatedAt = createdAt.Format(time.RFC3339)
 			out.Body.Revisions = append(out.Body.Revisions, r)
@@ -284,14 +285,14 @@ func registerWiki(api huma.API, s *Server) {
 
 		id, _, ok, err := s.getPageByPath(ctx, in.Path)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("load page", err)
+			return nil, internalError("load page", err)
 		}
 		if !ok {
 			return nil, huma.Error404NotFound("no such page")
 		}
 		canRead, err := s.wikiPageAccess(ctx, id, group, false, false)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("check access", err)
+			return nil, internalError("check access", err)
 		}
 		if !canRead {
 			return nil, huma.Error403Forbidden("you don't have access to this page")
@@ -321,14 +322,14 @@ func registerWiki(api huma.API, s *Server) {
 
 		id, _, ok, err := s.getPageByPath(ctx, in.Path)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("load page", err)
+			return nil, internalError("load page", err)
 		}
 		if !ok {
 			return nil, huma.Error404NotFound("no such page")
 		}
 		canWrite, err := s.wikiPageAccess(ctx, id, group, false, true)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("check access", err)
+			return nil, internalError("check access", err)
 		}
 		if !canWrite {
 			return nil, huma.Error403Forbidden("you don't have write access to this page")
@@ -352,7 +353,7 @@ func registerWiki(api huma.API, s *Server) {
 		}
 
 		if _, err := s.DB.Exec(ctx, `DELETE FROM wiki_pages WHERE id = $1`, id); err != nil {
-			return nil, huma.Error500InternalServerError("delete page", err)
+			return nil, internalError("delete page", err)
 		}
 
 		out := &ActionOutput{}
@@ -378,27 +379,27 @@ func registerWiki(api huma.API, s *Server) {
 
 		id, _, ok, err := s.getPageByPath(ctx, in.Body.OldPath)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("load page", err)
+			return nil, internalError("load page", err)
 		}
 		if !ok {
 			return nil, huma.Error404NotFound("no such page")
 		}
 		canWrite, err := s.wikiPageAccess(ctx, id, group, false, true)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("check access", err)
+			return nil, internalError("check access", err)
 		}
 		if !canWrite {
 			return nil, huma.Error403Forbidden("you don't have write access to this page")
 		}
 
 		if _, _, exists, err := s.getPageByPath(ctx, newPath); err != nil {
-			return nil, huma.Error500InternalServerError("check target path", err)
+			return nil, internalError("check target path", err)
 		} else if exists {
 			return nil, huma.Error400BadRequest("a page already exists at " + newPath)
 		}
 
 		if _, err := s.DB.Exec(ctx, `UPDATE wiki_pages SET path = $2, updated_at = now() WHERE id = $1`, id, newPath); err != nil {
-			return nil, huma.Error500InternalServerError("rename page", err)
+			return nil, internalError("rename page", err)
 		}
 
 		out := &ActionOutput{}
@@ -433,17 +434,17 @@ func registerWiki(api huma.API, s *Server) {
 			ORDER BY p.path
 		`, q)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("search", err)
+			return nil, internalError("search", err)
 		}
 		defer rows.Close()
 		for rows.Next() {
 			var p WikiPageSummary
 			if err := rows.Scan(&p.ID, &p.Path, &p.Title); err != nil {
-				return nil, huma.Error500InternalServerError("scan page", err)
+				return nil, internalError("scan page", err)
 			}
 			canRead, err := s.wikiPageAccess(ctx, p.ID, group, false, false)
 			if err != nil {
-				return nil, huma.Error500InternalServerError("check access", err)
+				return nil, internalError("check access", err)
 			}
 			if canRead {
 				out.Body.Pages = append(out.Body.Pages, p)

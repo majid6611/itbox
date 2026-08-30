@@ -120,7 +120,7 @@ func registerModules(api huma.API, s *Server) {
 		}
 		statuses, err := s.Modules.ListStatuses(ctx)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("list statuses", err)
+			return nil, internalError("list statuses", err)
 		}
 		for i, st := range statuses {
 			if manifest, ok := s.Registry.Get(st.ModuleID); ok {

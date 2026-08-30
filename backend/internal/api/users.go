@@ -294,7 +294,7 @@ func registerUsers(api huma.API, s *Server) {
 		}
 		client, available, err := s.directoryClient(ctx)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("check identity module", err)
+			return nil, internalError("check identity module", err)
 		}
 		out := &ListUsersOutput{}
 		out.Body.Available = available
@@ -303,11 +303,11 @@ func registerUsers(api huma.API, s *Server) {
 		}
 		users, err := client.ListUsers()
 		if err != nil {
-			return nil, huma.Error500InternalServerError("list users", err)
+			return nil, internalError("list users", err)
 		}
 		groups, err := client.ListGroups()
 		if err != nil {
-			return nil, huma.Error500InternalServerError("list groups", err)
+			return nil, internalError("list groups", err)
 		}
 		groupOut := make([]GroupOut, 0, len(groups))
 		for _, g := range groups {
@@ -316,7 +316,7 @@ func registerUsers(api huma.API, s *Server) {
 		byUser := groupOf(groupOut)
 		disabled, err := s.disabledUsernames(ctx)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("list disabled users", err)
+			return nil, internalError("list disabled users", err)
 		}
 		for _, u := range users {
 			out.Body.Users = append(out.Body.Users, UserOut{
@@ -338,7 +338,7 @@ func registerUsers(api huma.API, s *Server) {
 		}
 		client, available, err := s.directoryClient(ctx)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("check identity module", err)
+			return nil, internalError("check identity module", err)
 		}
 		if !available {
 			return nil, huma.Error400BadRequest("install the Identity module first")
@@ -348,7 +348,7 @@ func registerUsers(api huma.API, s *Server) {
 		}
 		groups, err := client.ListGroups()
 		if err != nil {
-			return nil, huma.Error500InternalServerError("list groups", err)
+			return nil, internalError("list groups", err)
 		}
 		groupExists := false
 		for _, g := range groups {
@@ -365,7 +365,7 @@ func registerUsers(api huma.API, s *Server) {
 			return nil, huma.Error400BadRequest("create user failed", err)
 		}
 		if err := client.AddUserToGroup(in.Body.Username, in.Body.Group); err != nil {
-			return nil, huma.Error500InternalServerError("user created but failed to add to group", err)
+			return nil, internalError("user created but failed to add to group", err)
 		}
 		if err := s.ensureWebdavFolders(ctx, "shared", in.Body.Username); err != nil {
 			log.Printf("create webdav folders for %s: %v", in.Body.Username, err)
@@ -392,7 +392,7 @@ func registerUsers(api huma.API, s *Server) {
 		}
 		client, available, err := s.directoryClient(ctx)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("check identity module", err)
+			return nil, internalError("check identity module", err)
 		}
 		if !available {
 			return nil, huma.Error400BadRequest("install the Identity module first")
@@ -416,7 +416,7 @@ func registerUsers(api huma.API, s *Server) {
 		}
 		client, available, err := s.directoryClient(ctx)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("check identity module", err)
+			return nil, internalError("check identity module", err)
 		}
 		if !available {
 			return nil, huma.Error400BadRequest("install the Identity module first")
@@ -426,14 +426,14 @@ func registerUsers(api huma.API, s *Server) {
 		}
 		groups, err := client.ListGroups()
 		if err != nil {
-			return nil, huma.Error500InternalServerError("list groups", err)
+			return nil, internalError("list groups", err)
 		}
 		groupExists := false
 		for _, g := range groups {
 			for _, member := range g.Members {
 				if member == in.Username && g.Name != in.Body.Group {
 					if err := client.RemoveUserFromGroup(in.Username, g.Name); err != nil {
-						return nil, huma.Error500InternalServerError("remove from old group failed", err)
+						return nil, internalError("remove from old group failed", err)
 					}
 				}
 			}
@@ -468,7 +468,7 @@ func registerUsers(api huma.API, s *Server) {
 		}
 		client, available, err := s.directoryClient(ctx)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("check identity module", err)
+			return nil, internalError("check identity module", err)
 		}
 		if !available {
 			return nil, huma.Error400BadRequest("install the Identity module first")
@@ -499,7 +499,7 @@ func registerUsers(api huma.API, s *Server) {
 		}
 		client, available, err := s.directoryClient(ctx)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("check identity module", err)
+			return nil, internalError("check identity module", err)
 		}
 		if !available {
 			return nil, huma.Error400BadRequest("install the Identity module first")
@@ -547,7 +547,7 @@ func registerUsers(api huma.API, s *Server) {
 		}
 		client, available, err := s.directoryClient(ctx)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("check identity module", err)
+			return nil, internalError("check identity module", err)
 		}
 		if !available {
 			return nil, huma.Error400BadRequest("install the Identity module first")
@@ -562,7 +562,7 @@ func registerUsers(api huma.API, s *Server) {
 			log.Printf("remove webdav login for disabled user %s: %v", in.Username, err)
 		}
 		if _, err := s.DB.Exec(ctx, `INSERT INTO disabled_users (username) VALUES ($1) ON CONFLICT DO NOTHING`, in.Username); err != nil {
-			return nil, huma.Error500InternalServerError("record disabled state", err)
+			return nil, internalError("record disabled state", err)
 		}
 		out := &ModuleActionOutput{}
 		out.Body.Success = true
@@ -580,7 +580,7 @@ func registerUsers(api huma.API, s *Server) {
 		}
 		client, available, err := s.directoryClient(ctx)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("check identity module", err)
+			return nil, internalError("check identity module", err)
 		}
 		if !available {
 			return nil, huma.Error400BadRequest("install the Identity module first")
@@ -598,7 +598,7 @@ func registerUsers(api huma.API, s *Server) {
 			log.Printf("sync webdav login for re-enabled user %s: %v", in.Username, err)
 		}
 		if _, err := s.DB.Exec(ctx, `DELETE FROM disabled_users WHERE username = $1`, in.Username); err != nil {
-			return nil, huma.Error500InternalServerError("clear disabled state", err)
+			return nil, internalError("clear disabled state", err)
 		}
 		out := &ResetPasswordOutput{}
 		out.Body.Success = true

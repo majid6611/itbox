@@ -47,7 +47,7 @@ func registerGroups(api huma.API, s *Server) {
 		}
 		client, available, err := s.directoryClient(ctx)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("check identity module", err)
+			return nil, internalError("check identity module", err)
 		}
 		out := &ListGroupsOutput{}
 		out.Body.Available = available
@@ -56,7 +56,7 @@ func registerGroups(api huma.API, s *Server) {
 		}
 		groups, err := client.ListGroups()
 		if err != nil {
-			return nil, huma.Error500InternalServerError("list groups", err)
+			return nil, internalError("list groups", err)
 		}
 		for _, g := range groups {
 			out.Body.Groups = append(out.Body.Groups, GroupOut{Name: g.Name, Members: g.Members})
@@ -75,7 +75,7 @@ func registerGroups(api huma.API, s *Server) {
 		}
 		client, available, err := s.directoryClient(ctx)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("check identity module", err)
+			return nil, internalError("check identity module", err)
 		}
 		if !available {
 			return nil, huma.Error400BadRequest("install the Identity module first")
@@ -110,7 +110,7 @@ func registerGroups(api huma.API, s *Server) {
 		}
 		client, available, err := s.directoryClient(ctx)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("check identity module", err)
+			return nil, internalError("check identity module", err)
 		}
 		if !available {
 			return nil, huma.Error400BadRequest("install the Identity module first")
