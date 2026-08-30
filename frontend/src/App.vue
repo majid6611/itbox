@@ -1,15 +1,28 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
 import { useAuthStore } from './stores/auth'
 import { usePortalStore } from './stores/portal'
+import { usePortalModulesStore } from './stores/portalModules'
 import { useRoute, useRouter } from 'vue-router'
 
 const auth = useAuthStore()
 const portal = usePortalStore()
+const portalModules = usePortalModulesStore()
 const route = useRoute()
 const router = useRouter()
 
 const inPortal = computed(() => route.path.startsWith('/portal'))
+
+// Only fetch once we know there's an employee session to fetch as — the
+// portal auth guard runs before this component even mounts, so by the
+// time portal.username is set, /api/portal/modules is callable.
+watch(
+  () => portal.username,
+  (username) => {
+    if (username && !portalModules.checked) portalModules.fetchAll()
+  },
+  { immediate: true },
+)
 
 async function handleLogout() {
   await auth.logout()
@@ -26,7 +39,7 @@ async function handlePortalLogout() {
   <div class="app-shell">
     <header v-if="inPortal && portal.username" class="topbar">
       <nav>
-        <router-link :to="{ name: 'portal-wiki', params: { pathMatch: [] } }">Wiki</router-link>
+        <router-link v-if="portalModules.modules.wiki" :to="{ name: 'portal-wiki', params: { pathMatch: [] } }">Wiki</router-link>
       </nav>
       <div class="account">
         <span>{{ portal.username }}</span>
@@ -37,7 +50,6 @@ async function handlePortalLogout() {
       <nav>
         <router-link to="/">Dashboard</router-link>
         <router-link to="/modules">Module Store</router-link>
-        <router-link to="/wiki-permissions">Wiki Permissions</router-link>
         <router-link to="/settings">Settings</router-link>
       </nav>
       <div class="account">

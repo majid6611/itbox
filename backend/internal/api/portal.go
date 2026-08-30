@@ -92,6 +92,21 @@ type PortalMeOutput struct {
 	}
 }
 
+type PortalModulesInput struct {
+	SessionToken string `cookie:"itp_employee_session"`
+}
+
+type PortalModulesOutput struct {
+	Body struct {
+		// Modules maps a feature-module's id (wiki, later chat, ...) to
+		// whether it's currently installed and running — driven entirely
+		// by which catalog manifests declare path_routes (see
+		// modules/manifest.go), so a new feature-module needs zero changes
+		// here to show up correctly once it exists.
+		Modules map[string]bool `json:"modules"`
+	}
+}
+
 func registerPortal(api huma.API, s *Server) {
 	huma.Register(api, huma.Operation{
 		OperationID: "portal-login",
@@ -167,6 +182,27 @@ func registerPortal(api huma.API, s *Server) {
 		out := &PortalMeOutput{}
 		out.Body.Username = username
 		out.Body.Group = group
+		return out, nil
+	})
+
+	huma.Register(api, huma.Operation{
+		OperationID: "portal-modules",
+		Method:      "GET",
+		Path:        "/api/portal/modules",
+		Summary:     "Which optional employee-portal features (wiki, chat, ...) are installed and running",
+	}, func(ctx context.Context, in *PortalModulesInput) (*PortalModulesOutput, error) {
+		if _, err := s.requireEmployeeAuth(ctx, in.SessionToken); err != nil {
+			return nil, err
+		}
+		out := &PortalModulesOutput{}
+		out.Body.Modules = make(map[string]bool)
+		for _, m := range s.Registry.List() {
+			if len(m.PathRoutes) == 0 {
+				continue // not a portal-facing feature module
+			}
+			status, ok, err := s.Modules.GetInstalled(ctx, m.ID)
+			out.Body.Modules[m.ID] = err == nil && ok && status.Status == "running"
+		}
 		return out, nil
 	})
 }
