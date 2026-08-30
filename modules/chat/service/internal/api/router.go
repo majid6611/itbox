@@ -41,6 +41,7 @@ func NewRouter(s *Server) http.Handler {
 	registerCustomGroups(api, s)
 	registerMessages(api, s)
 	registerAttachments(api, s)
+	registerEditDelete(api, s)
 
 	// The WebSocket upgrade isn't a huma operation — it needs the raw
 	// http.ResponseWriter/Request the coder/websocket library upgrades

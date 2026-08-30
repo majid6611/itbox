@@ -3,11 +3,13 @@ import { computed, watch } from 'vue'
 import { useAuthStore } from './stores/auth'
 import { usePortalStore } from './stores/portal'
 import { usePortalModulesStore } from './stores/portalModules'
+import { useChatStore } from './stores/chat'
 import { useRoute, useRouter } from 'vue-router'
 
 const auth = useAuthStore()
 const portal = usePortalStore()
 const portalModules = usePortalModulesStore()
+const chat = useChatStore()
 const route = useRoute()
 const router = useRouter()
 
@@ -22,6 +24,21 @@ watch(
     if (username && !portalModules.checked) portalModules.fetchAll()
   },
   { immediate: true },
+)
+
+// The chat WebSocket lives here, not in Chat.vue, so the nav badge and
+// browser notifications keep working while an employee is on any other
+// portal page — the whole point of a nav-level "signal" is noticing a
+// message without having the chat page open in the first place.
+watch(
+  () => [portal.username, portalModules.modules.chat] as const,
+  ([username, chatEnabled]) => {
+    if (username && chatEnabled && !chat.wsConnected) {
+      chat.connectWS(username)
+    } else if ((!username || !chatEnabled) && chat.ws) {
+      chat.disconnectWS()
+    }
+  },
 )
 
 async function handleLogout() {
@@ -40,7 +57,10 @@ async function handlePortalLogout() {
     <header v-if="inPortal && portal.username" class="topbar">
       <nav>
         <router-link v-if="portalModules.modules.wiki" :to="{ name: 'portal-wiki', params: { pathMatch: [] } }">Wiki</router-link>
-        <router-link v-if="portalModules.modules.chat" :to="{ name: 'portal-chat' }">Chat</router-link>
+        <router-link v-if="portalModules.modules.chat" :to="{ name: 'portal-chat' }" class="nav-link-with-badge">
+          Chat
+          <span v-if="chat.hasUnread" class="nav-badge" aria-label="Unread messages"></span>
+        </router-link>
       </nav>
       <div class="account">
         <span>{{ portal.username }}</span>
@@ -74,6 +94,18 @@ async function handlePortalLogout() {
 }
 .topbar nav a {
   margin-right: 1rem;
+}
+.nav-link-with-badge {
+  position: relative;
+}
+.nav-badge {
+  position: absolute;
+  top: -2px;
+  right: -6px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #e5484d;
 }
 .account {
   display: flex;

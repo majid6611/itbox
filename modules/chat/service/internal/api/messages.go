@@ -138,7 +138,7 @@ func registerMessages(api huma.API, s *Server) {
 // must have already checked group membership for a private-group target —
 // this assumes access is already allowed.
 func (s *Server) fetchMessages(ctx context.Context, me, group, with string, customGroup int64, after int64) ([]MessageOut, error) {
-	const cols = "id, sender_username, group_name, recipient_username, custom_group_id, content, created_at"
+	const cols = "id, sender_username, group_name, recipient_username, custom_group_id, content, created_at, edited_at, deleted_at"
 	var rows pgx.Rows
 	var err error
 	switch {
@@ -176,9 +176,10 @@ func (s *Server) fetchMessages(ctx context.Context, me, group, with string, cust
 	for rows.Next() {
 		var m MessageOut
 		var createdAt time.Time
+		var editedAt, deletedAt *time.Time
 		var groupName, recipient *string
 		var customGroupID *int64
-		if err := rows.Scan(&m.ID, &m.SenderUsername, &groupName, &recipient, &customGroupID, &m.Content, &createdAt); err != nil {
+		if err := rows.Scan(&m.ID, &m.SenderUsername, &groupName, &recipient, &customGroupID, &m.Content, &createdAt, &editedAt, &deletedAt); err != nil {
 			return nil, err
 		}
 		if groupName != nil {
@@ -191,6 +192,12 @@ func (s *Server) fetchMessages(ctx context.Context, me, group, with string, cust
 			m.CustomGroupID = *customGroupID
 		}
 		m.CreatedAt = createdAt.Format(time.RFC3339)
+		if editedAt != nil {
+			m.EditedAt = editedAt.Format(time.RFC3339)
+		}
+		if deletedAt != nil {
+			m.DeletedAt = deletedAt.Format(time.RFC3339)
+		}
 		messages = append(messages, m)
 		ids = append(ids, m.ID)
 	}
@@ -259,23 +266,37 @@ func (s *Server) insertMessage(ctx context.Context, sender, group, recipient str
 	return m, nil
 }
 
-// pushMessage delivers a just-sent message live. LDAP-group channel
-// messages go to everyone connected — those channels are open to the
-// whole company, so anyone might have one open. DMs go only to the two
-// participants (including the sender's own other tabs/devices, for a
-// consistent multi-device view). Private-group messages go only to that
-// group's actual members — the same invisibility guarantee the group's
-// existence gets extends to its live traffic, not just its history.
+// pushMessage delivers a just-sent message live. See pushEvent for the
+// routing rules (open channel vs. DM vs. private-group membership).
 func (s *Server) pushMessage(ctx context.Context, m *MessageOut) error {
+	return s.pushEvent(ctx, m, "message")
+}
+
+// pushUpdate delivers an edit or a delete on an existing message the same
+// way pushMessage delivers a new one — same target, same routing rules,
+// just a different event type so the client knows to find-and-replace
+// rather than append.
+func (s *Server) pushUpdate(ctx context.Context, m *MessageOut) error {
+	return s.pushEvent(ctx, m, "message_updated")
+}
+
+// pushEvent is the shared routing: LDAP-group channel messages go to
+// everyone connected (those channels are open to the whole company, so
+// anyone might have one open); DMs go only to the two participants
+// (including the sender's own other tabs/devices, for a consistent
+// multi-device view); private-group messages go only to that group's
+// actual members — the same invisibility guarantee the group's existence
+// gets extends to its live traffic, not just its history.
+func (s *Server) pushEvent(ctx context.Context, m *MessageOut, eventType string) error {
 	hm := &hub.Message{
 		ID: m.ID, SenderUsername: m.SenderUsername, GroupName: m.GroupName,
 		RecipientUsername: m.RecipientUsername, CustomGroupID: m.CustomGroupID,
-		Content: m.Content, CreatedAt: m.CreatedAt,
+		Content: m.Content, CreatedAt: m.CreatedAt, EditedAt: m.EditedAt, DeletedAt: m.DeletedAt,
 	}
 	if m.Attachment != nil {
 		hm.Attachment = &hub.Attachment{ID: m.Attachment.ID, Filename: m.Attachment.Filename, Size: m.Attachment.Size}
 	}
-	event := hub.Event{Type: "message", Message: hm}
+	event := hub.Event{Type: eventType, Message: hm}
 	switch {
 	case m.GroupName != "":
 		s.Hub.Broadcast(event)

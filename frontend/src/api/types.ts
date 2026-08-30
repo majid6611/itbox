@@ -184,6 +184,8 @@ export interface ChatMessage {
   custom_group_id?: number
   content: string
   created_at: string
+  edited_at?: string
+  deleted_at?: string
   attachment?: ChatAttachment
 }
 
@@ -200,7 +202,7 @@ export interface ChatCustomGroup {
 }
 
 export interface ChatEvent {
-  type: 'message' | 'presence' | 'group_invite'
+  type: 'message' | 'message_updated' | 'presence' | 'group_invite'
   message?: ChatMessage
   presence?: { username: string; online: boolean }
   group?: { id: number; name: string }
