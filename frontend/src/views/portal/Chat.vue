@@ -13,6 +13,28 @@ const fileInput = ref<HTMLInputElement | null>(null)
 const threadEl = ref<HTMLElement | null>(null)
 const moduleUnavailable = ref(false)
 
+// Emoji themselves need no special support at all — messages are plain
+// UTF-8 text (verified end to end: type one, it round-trips through
+// Postgres and back exactly as sent) and every modern browser renders
+// them natively. This is purely a discoverability convenience — typing
+// one via the OS picker (Win+. / Cmd+Ctrl+Space) already worked before
+// this button existed.
+const EMOJI = ['😀', '😂', '😊', '😍', '🥰', '😎', '🤔', '😢', '😭', '😡', '👍', '👎', '👏', '🙏', '💪', '🎉', '🔥', '❤️', '💯', '✅', '❌', '🚀', '👀', '😴', '🤝', '😅', '🙌', '😮', '🤷', '🎯']
+const showEmoji = ref(false)
+const draftInput = ref<HTMLInputElement | null>(null)
+
+function insertEmoji(e: string) {
+  const el = draftInput.value
+  const start = el?.selectionStart ?? draft.value.length
+  const end = el?.selectionEnd ?? draft.value.length
+  draft.value = draft.value.slice(0, start) + e + draft.value.slice(end)
+  nextTick(() => {
+    el?.focus()
+    const pos = start + e.length
+    el?.setSelectionRange(pos, pos)
+  })
+}
+
 const showNewGroup = ref(false)
 const newGroupName = ref('')
 const newGroupMembers = ref<Set<string>>(new Set())
@@ -64,6 +86,7 @@ async function send() {
   const text = draft.value.trim()
   if (!text || !active.value) return
   draft.value = ''
+  showEmoji.value = false
   sending.value = true
   try {
     await chat.sendMessage(active.value.kind, active.value.name, text)
@@ -220,10 +243,14 @@ onBeforeUnmount(() => {
           <p v-if="messages.length === 0" class="hint">No messages yet — say hello.</p>
         </div>
 
+        <div v-if="showEmoji" class="emoji-picker">
+          <button v-for="e in EMOJI" :key="e" type="button" class="emoji-btn" @click="insertEmoji(e)">{{ e }}</button>
+        </div>
         <form class="composer" @submit.prevent="send">
+          <button type="button" :disabled="sending" @click="showEmoji = !showEmoji">😊</button>
           <button type="button" :disabled="sending" @click="fileInput?.click()">📎</button>
           <input ref="fileInput" type="file" hidden @change="pickFile" />
-          <input v-model="draft" type="text" placeholder="Type a message…" :disabled="sending" />
+          <input ref="draftInput" v-model="draft" type="text" placeholder="Type a message…" :disabled="sending" />
           <button type="submit" :disabled="sending || !draft.trim()">Send</button>
         </form>
       </template>
@@ -378,6 +405,27 @@ onBeforeUnmount(() => {
   display: inline-block;
   margin-top: 0.15rem;
   font-size: 0.9rem;
+}
+.emoji-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.15rem;
+  border: 1px solid #333;
+  border-radius: 8px;
+  padding: 0.5rem;
+  margin-top: 0.5rem;
+}
+.emoji-btn {
+  background: none;
+  border: none;
+  font-size: 1.2rem;
+  padding: 0.2rem;
+  cursor: pointer;
+  border-radius: 4px;
+  line-height: 1;
+}
+.emoji-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
 }
 .composer {
   display: flex;
