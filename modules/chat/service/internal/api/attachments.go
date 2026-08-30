@@ -49,6 +49,7 @@ type UploadAttachmentInput struct {
 		// decorative, confirmed by hitting the validation error live.
 		GroupName         string        `form:"group_name" required:"false"`
 		RecipientUsername string        `form:"recipient_username" required:"false"`
+		CustomGroupID     int64         `form:"custom_group_id" required:"false"`
 		Caption           string        `form:"caption" required:"false"`
 		File              huma.FormFile `form:"file" required:"true"`
 	}]
@@ -68,15 +69,24 @@ func registerAttachments(api huma.API, s *Server) {
 		OperationID: "upload-chat-attachment",
 		Method:      "POST",
 		Path:        "/api/portal/chat/attachments",
-		Summary:     "Send a file to a channel or DM",
+		Summary:     "Send a file to a channel, a DM, or a private group",
 	}, func(ctx context.Context, in *UploadAttachmentInput) (*UploadAttachmentOutput, error) {
 		username, err := s.requireEmployeeAuth(ctx, in.SessionToken)
 		if err != nil {
 			return nil, err
 		}
 		data := in.RawBody.Data()
-		if (data.GroupName == "") == (data.RecipientUsername == "") {
-			return nil, huma.Error400BadRequest("specify exactly one of group_name or recipient_username")
+		if targetCount(data.GroupName, data.RecipientUsername, data.CustomGroupID) != 1 {
+			return nil, huma.Error400BadRequest("specify exactly one of group_name, recipient_username, or custom_group_id")
+		}
+		if data.CustomGroupID != 0 {
+			isMember, err := s.isGroupMember(ctx, data.CustomGroupID, username)
+			if err != nil {
+				return nil, huma.Error500InternalServerError("check membership", err)
+			}
+			if !isMember {
+				return nil, huma.Error403Forbidden("you're not a member of this group")
+			}
 		}
 
 		s3, available, err := s.chatS3Client(ctx)
@@ -95,7 +105,7 @@ func registerAttachments(api huma.API, s *Server) {
 			return nil, huma.Error400BadRequest(fmt.Sprintf("file too large — max %d MB", maxAttachmentSize/1024/1024))
 		}
 
-		msg, err := s.insertMessage(ctx, username, data.GroupName, data.RecipientUsername, data.Caption)
+		msg, err := s.insertMessage(ctx, username, data.GroupName, data.RecipientUsername, data.CustomGroupID, data.Caption)
 		if err != nil {
 			return nil, huma.Error500InternalServerError("save message", err)
 		}
@@ -116,7 +126,9 @@ func registerAttachments(api huma.API, s *Server) {
 		}
 		msg.Attachment = &a
 
-		s.pushMessage(msg)
+		if err := s.pushMessage(ctx, msg); err != nil {
+			return nil, huma.Error500InternalServerError("deliver message", err)
+		}
 
 		out := &UploadAttachmentOutput{Body: *msg}
 		return out, nil
@@ -128,16 +140,35 @@ func registerAttachments(api huma.API, s *Server) {
 		Path:        "/api/portal/chat/attachments/{id}",
 		Summary:     "Download a chat attachment",
 	}, func(ctx context.Context, in *DownloadAttachmentInput) (*huma.StreamResponse, error) {
-		if _, err := s.requireEmployeeAuth(ctx, in.SessionToken); err != nil {
+		username, err := s.requireEmployeeAuth(ctx, in.SessionToken)
+		if err != nil {
 			return nil, err
 		}
-		// No further access check beyond "is a logged-in employee" —
-		// matches channels/DMs both being visible to any employee who
-		// knows to look (chat has no per-message permission model).
 		var filename, key string
-		err := s.DB.QueryRow(ctx, `SELECT filename, s3_key FROM chat_attachments WHERE id = $1`, in.ID).Scan(&filename, &key)
+		var customGroupID *int64
+		err = s.DB.QueryRow(ctx, `
+			SELECT a.filename, a.s3_key, m.custom_group_id
+			FROM chat_attachments a JOIN chat_messages m ON m.id = a.message_id
+			WHERE a.id = $1
+		`, in.ID).Scan(&filename, &key, &customGroupID)
 		if err != nil {
 			return nil, huma.Error404NotFound("no such attachment")
+		}
+		// Channel/DM attachments have no further access check beyond "is a
+		// logged-in employee" — same as before. A private-group attachment
+		// is the one case that needs an explicit membership check here,
+		// same as the group's messages: without this, anyone who guessed
+		// or was sent the raw attachment id could pull a file out of a
+		// group they were never added to, defeating the whole point of it
+		// being private.
+		if customGroupID != nil {
+			isMember, err := s.isGroupMember(ctx, *customGroupID, username)
+			if err != nil {
+				return nil, huma.Error500InternalServerError("check membership", err)
+			}
+			if !isMember {
+				return nil, huma.Error403Forbidden("you're not a member of this group")
+			}
 		}
 
 		s3, available, err := s.chatS3Client(ctx)

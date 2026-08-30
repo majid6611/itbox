@@ -30,9 +30,19 @@ const (
 )
 
 type Event struct {
-	Type     string    `json:"type"` // "message" | "presence"
-	Message  *Message  `json:"message,omitempty"`
-	Presence *Presence `json:"presence,omitempty"`
+	Type     string       `json:"type"` // "message" | "presence" | "group_invite"
+	Message  *Message     `json:"message,omitempty"`
+	Presence *Presence    `json:"presence,omitempty"`
+	Group    *GroupInvite `json:"group,omitempty"`
+}
+
+// GroupInvite tells a newly-added member's own open tabs to refetch their
+// group list live — being added to a group is otherwise silent until they
+// reload, the same class of "went stale without a refresh" gap as an
+// unnoticed new message.
+type GroupInvite struct {
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
 }
 
 type Message struct {
@@ -40,6 +50,7 @@ type Message struct {
 	SenderUsername     string      `json:"sender_username"`
 	GroupName          string      `json:"group_name,omitempty"`
 	RecipientUsername  string      `json:"recipient_username,omitempty"`
+	CustomGroupID      int64       `json:"custom_group_id,omitempty"`
 	Content            string      `json:"content"`
 	CreatedAt          string      `json:"created_at"`
 	Attachment         *Attachment `json:"attachment,omitempty"`
