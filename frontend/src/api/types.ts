@@ -169,3 +169,30 @@ export interface WikiPermissionRule {
   group: string
   access: 'read' | 'write'
 }
+
+export interface ChatAttachment {
+  id: number
+  filename: string
+  size_bytes: number
+}
+
+export interface ChatMessage {
+  id: number
+  sender_username: string
+  group_name?: string
+  recipient_username?: string
+  content: string
+  created_at: string
+  attachment?: ChatAttachment
+}
+
+export interface ChatUser {
+  username: string
+  online: boolean
+}
+
+export interface ChatEvent {
+  type: 'message' | 'presence'
+  message?: ChatMessage
+  presence?: { username: string; online: boolean }
+}

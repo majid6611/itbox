@@ -1,0 +1,12 @@
+# Needed for WebSocket-capable path routes (see proxy.Manager.SetPathRoutes
+# and modules/chat) — the Connection header must be "upgrade" only when the
+# client actually asked for one, or plain HTTP requests to the same
+# location break. `map` is only valid at the http{} context level, which
+# per-module vhosts/location snippets in conf.d/ don't have access to on
+# their own, hence this separate file (envsubst renders every file in
+# nginx/templates/ the same way regardless of whether it has any ${VAR}
+# placeholders, which this one doesn't need).
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}

@@ -1,0 +1,13 @@
+networks:
+  edge:
+    external: true
+    name: it-platform-edge
+
+services:
+  chat:
+    image: it-chat:latest
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+    networks:
+      - edge

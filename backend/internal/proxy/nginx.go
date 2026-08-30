@@ -193,6 +193,19 @@ func (m *Manager) SetPathRoutes(ctx context.Context, moduleID string, targets []
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+        # WebSocket upgrade support (see modules/chat and
+        # nginx/templates/upgrade-map.conf.template for $connection_upgrade)
+        # — harmless for a plain-REST module like wiki, since nginx only
+        # actually upgrades the connection if the client's own request
+        # asked for one via the Upgrade header in the first place.
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        # A WebSocket connection is meant to stay open far longer than a
+        # normal request — without this nginx would silently kill an idle
+        # chat connection after its default 60s read/send timeout.
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
     }
 `, t.Path, t.Upstream)
 	}
