@@ -12,7 +12,6 @@ type Config struct {
 	DataDir       string
 	AdminEmail    string
 	AdminPassword string
-	SessionSecret string
 	BaseDomain    string
 
 	NginxConfDir       string
@@ -29,7 +28,6 @@ func Load() (*Config, error) {
 		DataDir:       getEnv("DATA_DIR", "./data/modules"),
 		AdminEmail:    getEnv("ADMIN_EMAIL", ""),
 		AdminPassword: getEnv("ADMIN_PASSWORD", ""),
-		SessionSecret: getEnv("SESSION_SECRET", ""),
 		BaseDomain:    getEnv("BASE_DOMAIN", "localhost"),
 
 		NginxConfDir:       getEnv("NGINX_CONF_DIR", "./nginx/conf.d"),
@@ -41,10 +39,6 @@ func Load() (*Config, error) {
 	if cfg.DatabaseURL == "" {
 		return nil, fmt.Errorf("DATABASE_URL is required")
 	}
-	if cfg.SessionSecret == "" {
-		return nil, fmt.Errorf("SESSION_SECRET is required")
-	}
-
 	return cfg, nil
 }
 

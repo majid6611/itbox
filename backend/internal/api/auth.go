@@ -15,7 +15,9 @@ type LoginInput struct {
 	// used only to key the login rate limiter below, never trusted for
 	// anything security-sensitive beyond that.
 	ClientIP string `header:"X-Real-IP"`
-	Body     struct {
+	// See secureCookie's doc comment.
+	ForwardedProto string `header:"X-Forwarded-Proto"`
+	Body           struct {
 		Email    string `json:"email" format:"email"`
 		Password string `json:"password"`
 	}
@@ -29,7 +31,8 @@ type LoginOutput struct {
 }
 
 type LogoutInput struct {
-	SessionToken string `cookie:"itp_session"`
+	SessionToken   string `cookie:"itp_session"`
+	ForwardedProto string `header:"X-Forwarded-Proto"`
 }
 
 type LogoutOutput struct {
@@ -75,6 +78,7 @@ func registerAuth(api huma.API, s *Server) {
 			Value:    token,
 			Path:     "/",
 			HttpOnly: true,
+			Secure:   secureCookie(in.ForwardedProto),
 			SameSite: http.SameSiteLaxMode,
 			Expires:  time.Now().Add(7 * 24 * time.Hour),
 		}).String()
@@ -95,6 +99,7 @@ func registerAuth(api huma.API, s *Server) {
 			Value:    "",
 			Path:     "/",
 			HttpOnly: true,
+			Secure:   secureCookie(in.ForwardedProto),
 			SameSite: http.SameSiteLaxMode,
 			Expires:  time.Unix(0, 0),
 		}).String()
