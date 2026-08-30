@@ -2,11 +2,62 @@ package api
 
 import (
 	"context"
+	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 
 	"it-platform/backend/internal/modules"
 )
+
+// sensitiveConfigKeyHints catches secret-looking config keys that aren't
+// declared in a module's *current* manifest at all — e.g. leftovers from a
+// since-removed field (vpn-netbird's old Dex integration left
+// dex_client_secret/ldap_bind_password sitting in already-installed
+// modules' stored config after Dex was dropped from the manifest; the
+// schema-driven check below has nothing to match those against). A
+// manifest can declare new sensitive fields it forgets to mark hidden, or
+// a field can go stale like this — name-based matching is the backstop for
+// both, on top of the precise, intentional manifest-driven redaction.
+var sensitiveConfigKeyHints = []string{"password", "secret", "token", "_key", "apikey"}
+
+func looksSensitive(key string) bool {
+	lower := strings.ToLower(key)
+	for _, hint := range sensitiveConfigKeyHints {
+		if strings.Contains(lower, hint) {
+			return true
+		}
+	}
+	return false
+}
+
+// redactSecretConfig strips a module's hidden/secret config values before
+// they leave the backend — GET /api/modules used to return every module's
+// full config map verbatim, including fields the manifest itself marks
+// `hidden: true` specifically so they're never shown to the admin (internal
+// RPC secrets, API tokens, the NetBird management PAT, ...). The frontend
+// never actually reads live secret values from this endpoint (the install
+// form only uses config_schema defaults), so this can't regress anything —
+// it just closes a needless exposure of every module's crown-jewel secrets
+// in one authenticated API response.
+func redactSecretConfig(manifest *modules.Manifest, config map[string]string) map[string]string {
+	if config == nil {
+		return nil
+	}
+	redact := make(map[string]bool, len(manifest.ConfigSchema))
+	for _, f := range manifest.ConfigSchema {
+		if f.Hidden || strings.HasPrefix(f.Type, "secret") {
+			redact[f.Key] = true
+		}
+	}
+	out := make(map[string]string, len(config))
+	for k, v := range config {
+		if redact[k] || looksSensitive(k) {
+			continue
+		}
+		out[k] = v
+	}
+	return out
+}
 
 type ListModulesInput struct {
 	SessionToken string `cookie:"itp_session"`
@@ -64,6 +115,12 @@ func registerModules(api huma.API, s *Server) {
 		if err != nil {
 			return nil, huma.Error500InternalServerError("list statuses", err)
 		}
+		for i, st := range statuses {
+			if manifest, ok := s.Registry.Get(st.ModuleID); ok {
+				statuses[i].Config = redactSecretConfig(manifest, st.Config)
+			}
+		}
+
 		out := &ListModulesOutput{}
 		out.Body.Catalog = s.Registry.List()
 		out.Body.Statuses = statuses

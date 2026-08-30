@@ -5,9 +5,48 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/http"
+	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 )
+
+// inlineSafeContentTypes are the only types ever served with
+// Content-Disposition: inline — everything else forces a download instead
+// of letting the browser render it, so an uploaded HTML/SVG file can never
+// execute as a page in this origin (which would run with the viewer's own
+// itp_employee_session cookie in scope). Deliberately checked against the
+// server-sniffed type (see uploadContentType below), never whatever
+// Content-Type the uploading client claimed — that header is trivial to
+// spoof on a multipart upload.
+var inlineSafeContentTypes = map[string]bool{
+	"image/png":  true,
+	"image/jpeg": true,
+	"image/gif":  true,
+	"image/webp": true,
+}
+
+// uploadContentType sniffs the real content type from the file's own
+// bytes rather than trusting the client-supplied Content-Type — a
+// malicious uploader can set that header to anything regardless of what's
+// actually in the file.
+func uploadContentType(fileBytes []byte) string {
+	n := len(fileBytes)
+	if n > 512 {
+		n = 512
+	}
+	return http.DetectContentType(fileBytes[:n])
+}
+
+// safeDispositionFilename strips characters that could break out of the
+// quoted Content-Disposition filename parameter (or, pre-Go's built-in CR/LF
+// header rejection, inject additional response headers).
+func safeDispositionFilename(name string) string {
+	name = strings.ReplaceAll(name, `"`, "")
+	name = strings.ReplaceAll(name, "\r", "")
+	name = strings.ReplaceAll(name, "\n", "")
+	return name
+}
 
 type UploadWikiAttachmentInput struct {
 	SessionToken string `cookie:"itp_employee_session"`
@@ -80,7 +119,7 @@ func registerWikiAttachments(api huma.API, s *Server) {
 		}
 		filename := data.File.Filename
 		key := fmt.Sprintf("wiki/%d/%s", pageID, filename)
-		if err := s3.Upload(ctx, key, bytes.NewReader(fileBytes), data.File.ContentType); err != nil {
+		if err := s3.Upload(ctx, key, bytes.NewReader(fileBytes), uploadContentType(fileBytes)); err != nil {
 			return nil, huma.Error500InternalServerError("upload attachment", err)
 		}
 
@@ -185,7 +224,18 @@ func registerWikiAttachments(api huma.API, s *Server) {
 				if contentType != "" {
 					hctx.SetHeader("Content-Type", contentType)
 				}
-				hctx.SetHeader("Content-Disposition", fmt.Sprintf(`inline; filename="%s"`, filename))
+				// nosniff so a browser never second-guesses the declared
+				// type for a forced download and decides to render it
+				// inline anyway; disposition itself is the real control —
+				// only a known-safe image type ever gets "inline", so an
+				// uploaded HTML/SVG/etc. file always downloads instead of
+				// executing in this origin.
+				hctx.SetHeader("X-Content-Type-Options", "nosniff")
+				disposition := "attachment"
+				if inlineSafeContentTypes[contentType] {
+					disposition = "inline"
+				}
+				hctx.SetHeader("Content-Disposition", fmt.Sprintf(`%s; filename="%s"`, disposition, safeDispositionFilename(filename)))
 				io.Copy(hctx.BodyWriter(), body)
 			},
 		}, nil

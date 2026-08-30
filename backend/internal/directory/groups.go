@@ -8,8 +8,10 @@ import (
 
 func (c *Client) groupsOU() string { return "ou=groups," + c.baseDN }
 
+// groupDN builds a group's DN, escaping name per RFC 4514 for the same
+// reason userDN in ldap.go does — see its comment.
 func (c *Client) groupDN(name string) string {
-	return fmt.Sprintf("cn=%s,%s", name, c.groupsOU())
+	return fmt.Sprintf("cn=%s,%s", ldap.EscapeDN(name), c.groupsOU())
 }
 
 // ensureGroupsOU creates the ou=groups container if it doesn't exist yet.
