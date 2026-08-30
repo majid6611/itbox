@@ -14,11 +14,9 @@ import (
 // inlineSafeContentTypes are the only types ever served with
 // Content-Disposition: inline — everything else forces a download instead
 // of letting the browser render it, so an uploaded HTML/SVG file can never
-// execute as a page in this origin (which would run with the viewer's own
-// itp_employee_session cookie in scope). Deliberately checked against the
-// server-sniffed type (see uploadContentType below), never whatever
-// Content-Type the uploading client claimed — that header is trivial to
-// spoof on a multipart upload.
+// execute as a page in this origin. Checked against the server-sniffed
+// type (see uploadContentType below), never whatever Content-Type the
+// uploading client claimed — that header is trivial to spoof.
 var inlineSafeContentTypes = map[string]bool{
 	"image/png":  true,
 	"image/jpeg": true,
@@ -26,10 +24,6 @@ var inlineSafeContentTypes = map[string]bool{
 	"image/webp": true,
 }
 
-// uploadContentType sniffs the real content type from the file's own
-// bytes rather than trusting the client-supplied Content-Type — a
-// malicious uploader can set that header to anything regardless of what's
-// actually in the file.
 func uploadContentType(fileBytes []byte) string {
 	n := len(fileBytes)
 	if n > 512 {
@@ -38,9 +32,6 @@ func uploadContentType(fileBytes []byte) string {
 	return http.DetectContentType(fileBytes[:n])
 }
 
-// safeDispositionFilename strips characters that could break out of the
-// quoted Content-Disposition filename parameter (or, pre-Go's built-in CR/LF
-// header rejection, inject additional response headers).
 func safeDispositionFilename(name string) string {
 	name = strings.ReplaceAll(name, `"`, "")
 	name = strings.ReplaceAll(name, "\r", "")
@@ -48,11 +39,6 @@ func safeDispositionFilename(name string) string {
 	return name
 }
 
-// maxAttachmentSize caps a single wiki attachment upload — without this,
-// io.ReadAll(data.File) below reads the entire upload into memory with no
-// limit at all, so any logged-in employee could exhaust backend memory
-// with a handful of huge uploads. 25 MB comfortably covers real wiki
-// attachments (images, docs) without needing a config knob for it.
 const maxAttachmentSize = 25 * 1024 * 1024
 
 type UploadWikiAttachmentInput struct {
@@ -83,7 +69,7 @@ type DownloadWikiAttachmentInput struct {
 	ID           int    `path:"id"`
 }
 
-func registerWikiAttachments(api huma.API, s *Server) {
+func registerAttachments(api huma.API, s *Server) {
 	huma.Register(api, huma.Operation{
 		OperationID: "upload-wiki-attachment",
 		Method:      "POST",
@@ -234,12 +220,6 @@ func registerWikiAttachments(api huma.API, s *Server) {
 				if contentType != "" {
 					hctx.SetHeader("Content-Type", contentType)
 				}
-				// nosniff so a browser never second-guesses the declared
-				// type for a forced download and decides to render it
-				// inline anyway; disposition itself is the real control —
-				// only a known-safe image type ever gets "inline", so an
-				// uploaded HTML/SVG/etc. file always downloads instead of
-				// executing in this origin.
 				hctx.SetHeader("X-Content-Type-Options", "nosniff")
 				disposition := "attachment"
 				if inlineSafeContentTypes[contentType] {

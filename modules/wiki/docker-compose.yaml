@@ -1,0 +1,13 @@
+networks:
+  edge:
+    external: true
+    name: it-platform-edge
+
+services:
+  wiki:
+    image: it-wiki:latest
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+    networks:
+      - edge

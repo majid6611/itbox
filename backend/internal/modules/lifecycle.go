@@ -42,6 +42,14 @@ type Manager struct {
 	db       *pgxpool.Pool
 	dataDir  string
 
+	// databaseURL is handed to any module whose manifest sets
+	// needs_database: true — see doInstall. Modules that use this connect
+	// straight to the platform's own shared Postgres rather than running
+	// their own; a deliberate exception to "modules never touch core
+	// data" for feature-modules like wiki that need to know who's logged
+	// in and what LDAP group they're in, which core already tracks there.
+	databaseURL string
+
 	// baseDomain is mutable at runtime (see SetBaseDomain) — an admin can
 	// change it from the Settings panel without a redeploy, so every
 	// access goes through the mutex instead of treating it as read-only
@@ -64,7 +72,7 @@ type Manager struct {
 // defaultBaseDomain (the BASE_DOMAIN env var) so existing deployments
 // keep working unchanged and there's a row for a future Settings save to
 // update.
-func NewManager(ctx context.Context, registry *Registry, dockerClient *docker.Client, proxyManager *proxy.Manager, db *pgxpool.Pool, dataDir, defaultBaseDomain string) (*Manager, error) {
+func NewManager(ctx context.Context, registry *Registry, dockerClient *docker.Client, proxyManager *proxy.Manager, db *pgxpool.Pool, dataDir, defaultBaseDomain, databaseURL string) (*Manager, error) {
 	baseDomain := defaultBaseDomain
 	var stored string
 	err := db.QueryRow(ctx, `SELECT base_domain FROM platform_settings WHERE id = true`).Scan(&stored)
@@ -78,7 +86,7 @@ func NewManager(ctx context.Context, registry *Registry, dockerClient *docker.Cl
 	default:
 		return nil, fmt.Errorf("load base domain: %w", err)
 	}
-	return &Manager{registry: registry, docker: dockerClient, proxy: proxyManager, db: db, dataDir: dataDir, baseDomain: baseDomain}, nil
+	return &Manager{registry: registry, docker: dockerClient, proxy: proxyManager, db: db, dataDir: dataDir, baseDomain: baseDomain, databaseURL: databaseURL}, nil
 }
 
 // beginOp claims exclusive access to a module for the duration of a
@@ -221,6 +229,21 @@ func (m *Manager) routeTargets(ctx context.Context, moduleID string, routes []Ro
 		targets = append(targets, t)
 	}
 	return targets, nil
+}
+
+// pathRouteTargets builds the nginx path-route list for a module's
+// PathRoutes (see PathRoute in manifest.go) — always reachable under the
+// main domain, no public/private visibility concept the way host-routed
+// modules have, since these paths are part of the same authenticated app.
+func (m *Manager) pathRouteTargets(moduleID string, routes []PathRoute) []proxy.PathRouteTarget {
+	targets := make([]proxy.PathRouteTarget, 0, len(routes))
+	for _, r := range routes {
+		targets = append(targets, proxy.PathRouteTarget{
+			Path:     r.Path,
+			Upstream: m.upstream(moduleID, Route{Service: r.Service, Port: r.Port}),
+		})
+	}
+	return targets
 }
 
 // Visibility returns "public" or "private" for a module's primary route —
@@ -375,9 +398,12 @@ func (m *Manager) Install(ctx context.Context, moduleID string, config map[strin
 }
 
 func (m *Manager) doInstall(ctx context.Context, moduleID string, manifest *Manifest, config map[string]string) error {
-	resolved := make(map[string]string, len(manifest.ConfigSchema)+2)
+	resolved := make(map[string]string, len(manifest.ConfigSchema)+3)
 	resolved["BASE_DOMAIN"] = m.BaseDomain()
 	resolved["MODULE_ID"] = moduleID
+	if manifest.NeedsDatabase {
+		resolved["DATABASE_URL"] = m.databaseURL
+	}
 	for _, field := range manifest.ConfigSchema {
 		v, ok := config[field.Key]
 		if !ok || v == "" {
@@ -418,6 +444,11 @@ func (m *Manager) doInstall(ctx context.Context, moduleID string, manifest *Mani
 			return fmt.Errorf("route module: %w", err)
 		}
 	}
+	if len(manifest.PathRoutes) > 0 {
+		if err := m.proxy.SetPathRoutes(ctx, moduleID, m.pathRouteTargets(moduleID, manifest.PathRoutes)); err != nil {
+			return fmt.Errorf("route module: %w", err)
+		}
+	}
 
 	configJSON, err := json.Marshal(resolved)
 	if err != nil {
@@ -453,6 +484,9 @@ func (m *Manager) Disable(_ context.Context, moduleID string) error {
 	defer cancel()
 
 	if err := m.proxy.RemoveRoutes(ctx, moduleID); err != nil {
+		return fmt.Errorf("unroute module: %w", err)
+	}
+	if err := m.proxy.RemovePathRoutes(ctx, moduleID); err != nil {
 		return fmt.Errorf("unroute module: %w", err)
 	}
 	dataDir := m.projectDir(moduleID)
@@ -492,6 +526,11 @@ func (m *Manager) Enable(_ context.Context, moduleID string) error {
 			return fmt.Errorf("route module: %w", err)
 		}
 	}
+	if len(manifest.PathRoutes) > 0 {
+		if err := m.proxy.SetPathRoutes(ctx, moduleID, m.pathRouteTargets(moduleID, manifest.PathRoutes)); err != nil {
+			return fmt.Errorf("route module: %w", err)
+		}
+	}
 
 	_, err = m.db.Exec(ctx, `UPDATE installed_modules SET status = 'running', error_message = NULL, updated_at = now() WHERE module_id = $1`, moduleID)
 	return err
@@ -511,6 +550,9 @@ func (m *Manager) Uninstall(_ context.Context, moduleID string) error {
 	defer cancel()
 
 	if err := m.proxy.RemoveRoutes(ctx, moduleID); err != nil {
+		return fmt.Errorf("unroute module: %w", err)
+	}
+	if err := m.proxy.RemovePathRoutes(ctx, moduleID); err != nil {
 		return fmt.Errorf("unroute module: %w", err)
 	}
 	dataDir := m.projectDir(moduleID)

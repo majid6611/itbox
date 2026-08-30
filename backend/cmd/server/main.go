@@ -46,7 +46,7 @@ func main() {
 
 	dockerClient := docker.NewClient()
 	proxyManager := proxy.NewManager(dockerClient, cfg.NginxConfDir, cfg.NginxContainerName)
-	moduleManager, err := modules.NewManager(ctx, registry, dockerClient, proxyManager, pool, cfg.DataDir, cfg.BaseDomain)
+	moduleManager, err := modules.NewManager(ctx, registry, dockerClient, proxyManager, pool, cfg.DataDir, cfg.BaseDomain, cfg.DatabaseURL)
 	if err != nil {
 		log.Fatalf("module manager: %v", err)
 	}

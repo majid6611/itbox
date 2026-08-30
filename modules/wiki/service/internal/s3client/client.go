@@ -1,8 +1,9 @@
-// Package s3client is a thin wrapper around the AWS SDK for talking to
-// our own Garage bucket (or, later, any other S3-compatible endpoint)
-// directly from request handlers — the backup feature's throwaway
-// rclone container is fine for bulk volume syncs, but a real S3 client
-// library is what a per-request file upload/download actually needs.
+// Package s3client is a copy of the core backend's own package of the same
+// name — kept duplicated rather than shared, since this module is a
+// separate deployable binary with its own go.mod (see the module's design
+// notes: modules are independent, self-contained units). Talks to the
+// s3-storage module's Garage bucket directly, for per-request wiki
+// attachment upload/download.
 package s3client
 
 import (
