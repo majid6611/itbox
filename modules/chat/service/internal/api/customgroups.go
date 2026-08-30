@@ -6,6 +6,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"it-platform/chat/internal/directory"
 	"it-platform/chat/internal/hub"
 )
 
@@ -80,6 +81,15 @@ func registerCustomGroups(api huma.API, s *Server) {
 		if name == "" {
 			return nil, huma.Error400BadRequest("group name can't be empty")
 		}
+		realUsers, err := s.realUsernames(ctx)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("check directory", err)
+		}
+		for _, m := range in.Body.Members {
+			if m = strings.TrimSpace(m); m != "" && !realUsers[m] {
+				return nil, huma.Error400BadRequest("no such employee: " + m)
+			}
+		}
 
 		tx, err := s.DB.Begin(ctx)
 		if err != nil {
@@ -138,6 +148,13 @@ func registerCustomGroups(api huma.API, s *Server) {
 		if newMember == "" {
 			return nil, huma.Error400BadRequest("username can't be empty")
 		}
+		realUsers, err := s.realUsernames(ctx)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("check directory", err)
+		}
+		if !realUsers[newMember] {
+			return nil, huma.Error400BadRequest("no such employee: " + newMember)
+		}
 		isMember, err := s.isGroupMember(ctx, in.ID, username)
 		if err != nil {
 			return nil, huma.Error500InternalServerError("check membership", err)
@@ -156,6 +173,22 @@ func registerCustomGroups(api huma.API, s *Server) {
 		out.Body.Success = true
 		return out, nil
 	})
+}
+
+// realUsernames backstops the frontend's own picker — that only stops a
+// well-behaved client, not a raw API call — so a private group's member
+// list can't be seeded with usernames that were never real employees
+// (previously possible, and previously actually happened during testing).
+func (s *Server) realUsernames(ctx context.Context) (map[string]bool, error) {
+	usernames, err := directory.ListUsers(ctx, s.DB)
+	if err != nil {
+		return nil, err
+	}
+	set := make(map[string]bool, len(usernames))
+	for _, u := range usernames {
+		set[u] = true
+	}
+	return set, nil
 }
 
 func (s *Server) myCustomGroups(ctx context.Context, username string) ([]CustomGroupOut, error) {

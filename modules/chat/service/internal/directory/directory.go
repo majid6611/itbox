@@ -1,7 +1,8 @@
 // Package directory reads LDAP directly for what chat needs: which group
-// an employee belongs to (their group is their channel), the full list of
-// groups (the channel list), and the full list of employees (the DM
-// picker). Gets the ldap-openldap module's connection details by reading
+// an employee belongs to (their group is their channel), a group's member
+// list (who a channel message is actually routed to), and the full list of
+// employees (the DM picker). Gets the ldap-openldap module's connection
+// details by reading
 // installed_modules from the same shared Postgres core itself reads that
 // table from, rather than calling back into core over HTTP — same pattern
 // as the wiki module's own directory package. Read-only.
@@ -75,25 +76,6 @@ func GroupFor(ctx context.Context, db *pgxpool.Pool, username string) (string, e
 	return "", nil
 }
 
-// ListGroups returns every group name — the chat channel list.
-func ListGroups(ctx context.Context, db *pgxpool.Pool) ([]string, error) {
-	conn, baseDN, available, err := connect(ctx, db)
-	if err != nil || !available {
-		return nil, err
-	}
-	defer conn.Close()
-
-	groups, err := searchGroups(conn, baseDN)
-	if err != nil {
-		return nil, err
-	}
-	names := make([]string, 0, len(groups))
-	for _, g := range groups {
-		names = append(names, g.name)
-	}
-	return names, nil
-}
-
 // ListUsers returns every employee's username — the DM target picker.
 func ListUsers(ctx context.Context, db *pgxpool.Pool) ([]string, error) {
 	conn, baseDN, available, err := connect(ctx, db)
@@ -113,6 +95,51 @@ func ListUsers(ctx context.Context, db *pgxpool.Pool) ([]string, error) {
 	usernames := make([]string, 0, len(res.Entries))
 	for _, e := range res.Entries {
 		usernames = append(usernames, e.GetAttributeValue("uid"))
+	}
+	return usernames, nil
+}
+
+// MembersOf returns the usernames belonging to the named LDAP group — used
+// to route a group channel's live messages only to people who actually
+// belong to it, the same restriction the read/write REST endpoints enforce.
+func MembersOf(ctx context.Context, db *pgxpool.Pool, groupName string) ([]string, error) {
+	conn, baseDN, available, err := connect(ctx, db)
+	if err != nil || !available {
+		return nil, err
+	}
+	defer conn.Close()
+
+	groups, err := searchGroups(conn, baseDN)
+	if err != nil {
+		return nil, err
+	}
+	var memberDNs map[string]bool
+	for _, g := range groups {
+		if g.name == groupName {
+			memberDNs = make(map[string]bool, len(g.members))
+			for _, dn := range g.members {
+				memberDNs[dn] = true
+			}
+			break
+		}
+	}
+	if len(memberDNs) == 0 {
+		return nil, nil
+	}
+
+	req := ldap.NewSearchRequest(
+		"ou=people,"+baseDN, ldap.ScopeSingleLevel, ldap.NeverDerefAliases, 0, 0, false,
+		"(objectClass=inetOrgPerson)", []string{"uid"}, nil,
+	)
+	res, err := conn.Search(req)
+	if err != nil {
+		return nil, fmt.Errorf("search users: %w", err)
+	}
+	var usernames []string
+	for _, e := range res.Entries {
+		if memberDNs[e.DN] {
+			usernames = append(usernames, e.GetAttributeValue("uid"))
+		}
 	}
 	return usernames, nil
 }
