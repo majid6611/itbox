@@ -2,7 +2,7 @@ package api
 
 import (
 	"context"
-	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -134,7 +134,9 @@ type PortalLoginInput struct {
 	// Set by nginx (see proxy/nginx.go's proxy_set_header X-Real-IP) —
 	// used only to key the login rate limiter below.
 	ClientIP string `header:"X-Real-IP"`
-	Body     struct {
+	// See secureCookie's doc comment.
+	ForwardedProto string `header:"X-Forwarded-Proto"`
+	Body           struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
 	}
@@ -148,7 +150,15 @@ type PortalLoginOutput struct {
 }
 
 type PortalLogoutInput struct {
-	SessionToken string `cookie:"itp_employee_session"`
+	SessionToken   string `cookie:"itp_employee_session"`
+	ForwardedProto string `header:"X-Forwarded-Proto"`
+}
+
+type PortalLogoutOutput struct {
+	SetCookie string `header:"Set-Cookie"`
+	Body      struct {
+		Success bool `json:"success"`
+	}
 }
 
 type PortalMeInput struct {
@@ -188,7 +198,15 @@ func registerPortal(api huma.API, s *Server) {
 		s.employeeLoginLimiter.Reset(key)
 		out := &PortalLoginOutput{}
 		out.Body.Username = in.Body.Username
-		out.SetCookie = []string{fmt.Sprintf("%s=%s; Path=/; HttpOnly; SameSite=Lax", employeeSessionCookieName, token)}
+		out.SetCookie = []string{(&http.Cookie{
+			Name:     employeeSessionCookieName,
+			Value:    token,
+			Path:     "/",
+			HttpOnly: true,
+			Secure:   secureCookie(in.ForwardedProto),
+			SameSite: http.SameSiteLaxMode,
+			Expires:  time.Now().Add(7 * 24 * time.Hour),
+		}).String()}
 		return out, nil
 	})
 
@@ -197,11 +215,20 @@ func registerPortal(api huma.API, s *Server) {
 		Method:      "POST",
 		Path:        "/api/portal/logout",
 		Summary:     "Employee logout",
-	}, func(ctx context.Context, in *PortalLogoutInput) (*ModuleActionOutput, error) {
+	}, func(ctx context.Context, in *PortalLogoutInput) (*PortalLogoutOutput, error) {
 		if in.SessionToken != "" {
 			_ = s.Employee.Logout(ctx, in.SessionToken)
 		}
-		out := &ModuleActionOutput{}
+		out := &PortalLogoutOutput{}
+		out.SetCookie = (&http.Cookie{
+			Name:     employeeSessionCookieName,
+			Value:    "",
+			Path:     "/",
+			HttpOnly: true,
+			Secure:   secureCookie(in.ForwardedProto),
+			SameSite: http.SameSiteLaxMode,
+			Expires:  time.Unix(0, 0),
+		}).String()
 		out.Body.Success = true
 		return out, nil
 	})

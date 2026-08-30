@@ -11,6 +11,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -333,6 +334,16 @@ func (m *Manager) Install(ctx context.Context, moduleID string, config map[strin
 	}
 	if manifest.ComposeFile == "" {
 		return fmt.Errorf("module %q is not yet available to install", moduleID)
+	}
+	// A config value containing a newline would inject an extra line into
+	// the .env file RenderCompose writes (plain KEY=VALUE, one per line),
+	// defining a variable nobody asked for. Rejected outright rather than
+	// stripped — silently altering what the admin typed could hide a
+	// paste error instead of surfacing it.
+	for k, v := range config {
+		if strings.ContainsAny(v, "\r\n") {
+			return fmt.Errorf("config value %q can't contain a newline", k)
+		}
 	}
 
 	done, err := m.beginOp(moduleID)

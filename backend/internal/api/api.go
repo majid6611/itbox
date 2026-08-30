@@ -71,6 +71,19 @@ func NewRouter(s *Server) http.Handler {
 	return router
 }
 
+// secureCookie reports whether a Set-Cookie response should carry the
+// Secure attribute. Nothing in this platform terminates TLS today (nginx
+// listens on plain HTTP — see docker-compose.yaml/nginx/), so this is
+// always false right now, which is correct: a browser silently refuses to
+// even store a Secure cookie sent over plain HTTP, so hardcoding Secure:
+// true today would just break every login. If TLS is ever added in front
+// of nginx, whatever terminates it needs to set X-Forwarded-Proto: https
+// on the way in (standard practice) for this to start actually applying
+// the protection — see also proto binding on the login/logout inputs.
+func secureCookie(forwardedProto string) bool {
+	return forwardedProto == "https"
+}
+
 // rateLimitKey turns the X-Real-IP nginx sets (see proxy/nginx.go) into a
 // rate-limiter key, falling back to a shared bucket if it's ever missing
 // (e.g. a direct request that bypassed nginx) — degrades to one shared
