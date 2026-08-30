@@ -8,6 +8,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/jackc/pgx/v5"
 
+	"it-platform/chat/internal/directory"
 	"it-platform/chat/internal/hub"
 )
 
@@ -73,6 +74,11 @@ func registerMessages(api huma.API, s *Server) {
 		if targetCount(in.Group, in.With, in.CustomGroup) != 1 {
 			return nil, huma.Error400BadRequest("specify exactly one of group, with, or custom_group")
 		}
+		if in.Group != "" {
+			if err := s.requireChannelMember(ctx, username, in.Group); err != nil {
+				return nil, err
+			}
+		}
 		if in.CustomGroup != 0 {
 			isMember, err := s.isGroupMember(ctx, in.CustomGroup, username)
 			if err != nil {
@@ -108,6 +114,11 @@ func registerMessages(api huma.API, s *Server) {
 		}
 		if targetCount(in.Body.GroupName, in.Body.RecipientUsername, in.Body.CustomGroupID) != 1 {
 			return nil, huma.Error400BadRequest("specify exactly one of group_name, recipient_username, or custom_group_id")
+		}
+		if in.Body.GroupName != "" {
+			if err := s.requireChannelMember(ctx, username, in.Body.GroupName); err != nil {
+				return nil, err
+			}
 		}
 		if in.Body.CustomGroupID != 0 {
 			isMember, err := s.isGroupMember(ctx, in.Body.CustomGroupID, username)
@@ -280,13 +291,13 @@ func (s *Server) pushUpdate(ctx context.Context, m *MessageOut) error {
 	return s.pushEvent(ctx, m, "message_updated")
 }
 
-// pushEvent is the shared routing: LDAP-group channel messages go to
-// everyone connected (those channels are open to the whole company, so
-// anyone might have one open); DMs go only to the two participants
-// (including the sender's own other tabs/devices, for a consistent
-// multi-device view); private-group messages go only to that group's
-// actual members — the same invisibility guarantee the group's existence
-// gets extends to its live traffic, not just its history.
+// pushEvent is the shared routing: an LDAP-group channel message goes only
+// to that group's actual members (mirroring the read/write REST checks —
+// live delivery shouldn't reach further than history does); DMs go only to
+// the two participants (including the sender's own other tabs/devices, for
+// a consistent multi-device view); private-group messages go only to that
+// group's actual members — the same invisibility guarantee the group's
+// existence gets extends to its live traffic, not just its history.
 func (s *Server) pushEvent(ctx context.Context, m *MessageOut, eventType string) error {
 	hm := &hub.Message{
 		ID: m.ID, SenderUsername: m.SenderUsername, GroupName: m.GroupName,
@@ -299,7 +310,11 @@ func (s *Server) pushEvent(ctx context.Context, m *MessageOut, eventType string)
 	event := hub.Event{Type: eventType, Message: hm}
 	switch {
 	case m.GroupName != "":
-		s.Hub.Broadcast(event)
+		members, err := directory.MembersOf(ctx, s.DB, m.GroupName)
+		if err != nil {
+			return err
+		}
+		s.Hub.SendTo(members, event)
 	case m.CustomGroupID != 0:
 		members, err := s.groupMembers(ctx, m.CustomGroupID)
 		if err != nil {

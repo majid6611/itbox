@@ -14,9 +14,12 @@ type ListChannelsInput struct {
 
 type ListChannelsOutput struct {
 	Body struct {
-		// Channels are just every company group — no separate "create a
-		// channel" step, and open to every employee (chat doesn't have
-		// wiki's per-page permission model; that wasn't asked for here).
+		// A channel is just the employee's own LDAP group — no separate
+		// "create a channel" step. Restricted to the group(s) the caller
+		// actually belongs to, same as list-my-chat-groups is restricted
+		// to private groups they're a member of; the read/write message
+		// endpoints enforce the same boundary server-side, this just keeps
+		// the sidebar from listing channels the employee couldn't use anyway.
 		Channels []string `json:"channels"`
 	}
 }
@@ -36,17 +39,20 @@ func registerChannels(api huma.API, s *Server) {
 		OperationID: "list-chat-channels",
 		Method:      "GET",
 		Path:        "/api/portal/chat/channels",
-		Summary:     "List every group channel",
+		Summary:     "List the group channel(s) the employee belongs to",
 	}, func(ctx context.Context, in *ListChannelsInput) (*ListChannelsOutput, error) {
-		if _, err := s.requireEmployeeAuth(ctx, in.SessionToken); err != nil {
+		username, err := s.requireEmployeeAuth(ctx, in.SessionToken)
+		if err != nil {
 			return nil, err
 		}
-		groups, err := directory.ListGroups(ctx, s.DB)
+		group, err := s.employeeGroup(ctx, username)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("list groups", err)
+			return nil, huma.Error500InternalServerError("look up group", err)
 		}
 		out := &ListChannelsOutput{}
-		out.Body.Channels = groups
+		if group != "" {
+			out.Body.Channels = []string{group}
+		}
 		return out, nil
 	})
 

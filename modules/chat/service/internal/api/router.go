@@ -66,3 +66,18 @@ func (s *Server) chatS3Client(ctx context.Context) (*s3client.Client, bool, erro
 func (s *Server) employeeGroup(ctx context.Context, username string) (string, error) {
 	return directory.GroupFor(ctx, s.DB, username)
 }
+
+// requireChannelMember rejects a group-channel request from anyone whose
+// own LDAP group doesn't match — a channel is that group's own space, the
+// same boundary a private custom group's membership check enforces, just
+// backed by LDAP membership instead of a chat_group_members row.
+func (s *Server) requireChannelMember(ctx context.Context, username, group string) error {
+	myGroup, err := s.employeeGroup(ctx, username)
+	if err != nil {
+		return huma.Error500InternalServerError("check group membership", err)
+	}
+	if myGroup == "" || myGroup != group {
+		return huma.Error403Forbidden("you're not a member of this channel")
+	}
+	return nil
+}

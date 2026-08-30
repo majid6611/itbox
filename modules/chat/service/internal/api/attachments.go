@@ -79,6 +79,11 @@ func registerAttachments(api huma.API, s *Server) {
 		if targetCount(data.GroupName, data.RecipientUsername, data.CustomGroupID) != 1 {
 			return nil, huma.Error400BadRequest("specify exactly one of group_name, recipient_username, or custom_group_id")
 		}
+		if data.GroupName != "" {
+			if err := s.requireChannelMember(ctx, username, data.GroupName); err != nil {
+				return nil, err
+			}
+		}
 		if data.CustomGroupID != 0 {
 			isMember, err := s.isGroupMember(ctx, data.CustomGroupID, username)
 			if err != nil {
