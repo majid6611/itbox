@@ -40,6 +40,7 @@ async function handlePortalLogout() {
     <header v-if="inPortal && portal.username" class="topbar">
       <nav>
         <router-link v-if="portalModules.modules.wiki" :to="{ name: 'portal-wiki', params: { pathMatch: [] } }">Wiki</router-link>
+        <router-link v-if="portalModules.modules.chat" :to="{ name: 'portal-chat' }">Chat</router-link>
       </nav>
       <div class="account">
         <span>{{ portal.username }}</span>

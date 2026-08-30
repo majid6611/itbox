@@ -1,0 +1,22 @@
+id: chat
+name: Chat
+description: >-
+  Live group and personal (DM) chat for employees, with file sharing and
+  online presence. Group channels map directly to your company's LDAP
+  groups. Employees log in with their own company (LDAP) account —
+  separate from the admin login, same as Wiki. Talks straight to this
+  platform's own database rather than running one of its own; creates its
+  tables on install if they don't already exist.
+category: collaboration
+version: "1.0.0"
+compose_file: docker-compose.yaml
+needs_database: true
+soft_dependencies:
+  - id: ldap-openldap
+    integration: directory
+  - id: s3-storage
+    integration: attachments
+path_routes:
+  - path: /api/portal/chat
+    service: chat
+    port: 8080

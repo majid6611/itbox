@@ -1,0 +1,171 @@
+package api
+
+import (
+	"bytes"
+	"context"
+	"fmt"
+	"io"
+	"net/http"
+	"strings"
+
+	"github.com/danielgtaylor/huma/v2"
+)
+
+// Same reasoning as the wiki module's attachment handling — only genuine
+// images ever get served inline, everything else forces a download, and
+// the type is sniffed server-side rather than trusted from the upload's
+// declared Content-Type (trivially spoofable). See that module for the
+// original write-up of why.
+var inlineSafeContentTypes = map[string]bool{
+	"image/png":  true,
+	"image/jpeg": true,
+	"image/gif":  true,
+	"image/webp": true,
+}
+
+func uploadContentType(fileBytes []byte) string {
+	n := len(fileBytes)
+	if n > 512 {
+		n = 512
+	}
+	return http.DetectContentType(fileBytes[:n])
+}
+
+func safeDispositionFilename(name string) string {
+	name = strings.ReplaceAll(name, `"`, "")
+	name = strings.ReplaceAll(name, "\r", "")
+	name = strings.ReplaceAll(name, "\n", "")
+	return name
+}
+
+const maxAttachmentSize = 25 * 1024 * 1024
+
+type UploadAttachmentInput struct {
+	SessionToken string `cookie:"itp_employee_session"`
+	RawBody      huma.MultipartFormFiles[struct {
+		// huma's multipart form fields default to required (unlike JSON
+		// body fields, which default to optional) — explicit
+		// required:"false" on each of these is load-bearing, not
+		// decorative, confirmed by hitting the validation error live.
+		GroupName         string        `form:"group_name" required:"false"`
+		RecipientUsername string        `form:"recipient_username" required:"false"`
+		Caption           string        `form:"caption" required:"false"`
+		File              huma.FormFile `form:"file" required:"true"`
+	}]
+}
+
+type UploadAttachmentOutput struct {
+	Body MessageOut
+}
+
+type DownloadAttachmentInput struct {
+	SessionToken string `cookie:"itp_employee_session"`
+	ID           int    `path:"id"`
+}
+
+func registerAttachments(api huma.API, s *Server) {
+	huma.Register(api, huma.Operation{
+		OperationID: "upload-chat-attachment",
+		Method:      "POST",
+		Path:        "/api/portal/chat/attachments",
+		Summary:     "Send a file to a channel or DM",
+	}, func(ctx context.Context, in *UploadAttachmentInput) (*UploadAttachmentOutput, error) {
+		username, err := s.requireEmployeeAuth(ctx, in.SessionToken)
+		if err != nil {
+			return nil, err
+		}
+		data := in.RawBody.Data()
+		if (data.GroupName == "") == (data.RecipientUsername == "") {
+			return nil, huma.Error400BadRequest("specify exactly one of group_name or recipient_username")
+		}
+
+		s3, available, err := s.chatS3Client(ctx)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("check backup storage", err)
+		}
+		if !available {
+			return nil, huma.Error400BadRequest("install the Backup Storage module first — attachments are stored there")
+		}
+
+		fileBytes, err := io.ReadAll(io.LimitReader(data.File, maxAttachmentSize+1))
+		if err != nil {
+			return nil, huma.Error400BadRequest("read upload", err)
+		}
+		if len(fileBytes) > maxAttachmentSize {
+			return nil, huma.Error400BadRequest(fmt.Sprintf("file too large — max %d MB", maxAttachmentSize/1024/1024))
+		}
+
+		msg, err := s.insertMessage(ctx, username, data.GroupName, data.RecipientUsername, data.Caption)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("save message", err)
+		}
+
+		filename := data.File.Filename
+		key := fmt.Sprintf("chat/%d/%s", msg.ID, filename)
+		if err := s3.Upload(ctx, key, bytes.NewReader(fileBytes), uploadContentType(fileBytes)); err != nil {
+			return nil, huma.Error500InternalServerError("upload attachment", err)
+		}
+
+		var a AttachmentOut
+		err = s.DB.QueryRow(ctx, `
+			INSERT INTO chat_attachments (message_id, filename, s3_key, size_bytes, uploaded_by)
+			VALUES ($1, $2, $3, $4, $5) RETURNING id, filename, size_bytes
+		`, msg.ID, filename, key, len(fileBytes), username).Scan(&a.ID, &a.Filename, &a.Size)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("record attachment", err)
+		}
+		msg.Attachment = &a
+
+		s.pushMessage(msg)
+
+		out := &UploadAttachmentOutput{Body: *msg}
+		return out, nil
+	})
+
+	huma.Register(api, huma.Operation{
+		OperationID: "download-chat-attachment",
+		Method:      "GET",
+		Path:        "/api/portal/chat/attachments/{id}",
+		Summary:     "Download a chat attachment",
+	}, func(ctx context.Context, in *DownloadAttachmentInput) (*huma.StreamResponse, error) {
+		if _, err := s.requireEmployeeAuth(ctx, in.SessionToken); err != nil {
+			return nil, err
+		}
+		// No further access check beyond "is a logged-in employee" —
+		// matches channels/DMs both being visible to any employee who
+		// knows to look (chat has no per-message permission model).
+		var filename, key string
+		err := s.DB.QueryRow(ctx, `SELECT filename, s3_key FROM chat_attachments WHERE id = $1`, in.ID).Scan(&filename, &key)
+		if err != nil {
+			return nil, huma.Error404NotFound("no such attachment")
+		}
+
+		s3, available, err := s.chatS3Client(ctx)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("check backup storage", err)
+		}
+		if !available {
+			return nil, huma.Error500InternalServerError("attachment storage unavailable", nil)
+		}
+		body, contentType, err := s3.Download(ctx, key)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("download attachment", err)
+		}
+
+		return &huma.StreamResponse{
+			Body: func(hctx huma.Context) {
+				defer body.Close()
+				if contentType != "" {
+					hctx.SetHeader("Content-Type", contentType)
+				}
+				hctx.SetHeader("X-Content-Type-Options", "nosniff")
+				disposition := "attachment"
+				if inlineSafeContentTypes[contentType] {
+					disposition = "inline"
+				}
+				hctx.SetHeader("Content-Disposition", fmt.Sprintf(`%s; filename="%s"`, disposition, safeDispositionFilename(filename)))
+				io.Copy(hctx.BodyWriter(), body)
+			},
+		}, nil
+	})
+}
