@@ -1,9 +1,9 @@
 # IT Platform
 
 Self-hosted, web-based, dockerized IT platform for small companies. Services
-(VPN, LDAP, fileshare, S3, Google Drive, and later a compute-mesh
-power-management module) are installed as independent modules from a
-built-in Module Store, so a company only runs what it needs.
+(VPN, LDAP, fileshare, S3, wiki, chat, video calls, remote power
+management) are installed as independent modules from a built-in Module
+Store, so a company only runs what it needs.
 
 ## Stack
 
@@ -118,7 +118,8 @@ Modules currently in the catalog:
 | `vpn-netbird` | implemented — self-hosted WireGuard mesh VPN (Netbird) |
 | `wiki` | implemented — feature module, employee wiki with revision history and per-page permissions |
 | `chat` | implemented — feature module, live group/DM chat with file sharing and presence |
-| `mesh-wol` | stub — compute power management (Wake-on-LAN), planned for later |
+| `video-jitsi` | implemented — feature module, self-hosted video calls (Jitsi Meet), linkable from chat |
+| `compute-mesh` | implemented — remote power control (Intel AMT: on/off/cycle) via a self-hosted MeshCentral engine behind our own UI |
 
 **Why Garage, not MinIO:** MinIO was the original pick, but its
 community edition's web console was stripped out in mid-2025 and the

@@ -138,6 +138,7 @@ func registerComputeMesh(api huma.API, s *Server) {
 			return nil, internalError("check compute mesh module", err)
 		}
 		out.Body.Available = available
+		out.Body.Devices = []MeshDeviceOut{}
 		if !available {
 			return out, nil
 		}
