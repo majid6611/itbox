@@ -25,6 +25,15 @@ services:
       BASE_DOMAIN: ${BASE_DOMAIN}
     ports:
       - "8000:80"
+      # The platform itself is still plain-HTTP-only (see README) — this is
+      # only for video-jitsi's self-signed TLS vhost (Manifest.NeedsTLS),
+      # the one module so far that genuinely can't work without a real
+      # HTTPS/WSS listener. Standard 443, matching video-jitsi's own
+      # PUBLIC_URL, which assumes the default port rather than carrying an
+      # explicit one — unlike port 8000 above, nothing else on this
+      # platform claims 443, so there's no dev-convenience reason to
+      # offset it the way 8000 offsets 80.
+      - "443:443"
     volumes:
       - ./nginx/templates:/etc/nginx/templates:ro
       - ./nginx/conf.d:/etc/nginx/conf.d
