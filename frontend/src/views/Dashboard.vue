@@ -49,7 +49,12 @@ const attentionCount = computed(() => installed.value.filter((m) => ['stopped', 
       </div>
 
       <div class="card list">
-        <router-link v-for="m in modules.catalog" :key="m.id" to="/modules" class="row">
+        <router-link
+          v-for="m in modules.catalog"
+          :key="m.id"
+          :to="statusFor(m.id) === 'running' && m.internal_panel ? m.internal_panel : '/modules'"
+          class="row"
+        >
           <span class="row-name">{{ m.name }}</span>
           <span class="pill" :class="pillClass(statusFor(m.id))">{{ statusFor(m.id).replace('_', ' ') }}</span>
         </router-link>

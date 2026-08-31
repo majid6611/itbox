@@ -1,7 +1,0 @@
-id: mesh-wol
-name: Compute Mesh (Power Management)
-description: Turn company computers on/off remotely via Wake-on-LAN and agent-based shutdown. Coming soon.
-category: mesh
-version: "0.0.0"
-config_schema: []
-soft_dependencies: []
