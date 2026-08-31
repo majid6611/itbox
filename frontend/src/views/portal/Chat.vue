@@ -78,9 +78,13 @@ function randomRoomId() {
 }
 async function startCall() {
   if (!active.value || !portalModules.videoCallBaseURL) return
+  // The link posted to chat is the bare room URL, shared by everyone —
+  // the display-name prefill below is added per-click (see
+  // joinURL/callLinkHref) using whoever's actually opening it, not baked
+  // in here as the sender's own name.
   const url = `${portalModules.videoCallBaseURL}/${randomRoomId()}`
   await chat.sendMessage(active.value.kind, active.value.name, url)
-  window.open(url, '_blank', 'noopener')
+  window.open(joinURL(url), '_blank', 'noopener')
 }
 
 // A message that's nothing but a URL renders as a real link instead of
@@ -92,6 +96,17 @@ function isPlainUrl(content: string): boolean {
 }
 function isVideoCallLink(content: string): boolean {
   return !!portalModules.videoCallBaseURL && content.trim().startsWith(portalModules.videoCallBaseURL + '/')
+}
+// Pre-fills the join screen with the current viewer's own name — Jitsi
+// reads this straight off the URL fragment, no server-side awareness of
+// who's joining needed. Every click computes its own, so the same shared
+// link fills in "milad" for milad and "mehdi" for mehdi rather than
+// whoever happened to start the call.
+function joinURL(url: string): string {
+  return `${url}#userInfo.displayName=${encodeURIComponent(JSON.stringify(portal.username))}`
+}
+function callLinkHref(content: string): string {
+  return isVideoCallLink(content) ? joinURL(content.trim()) : content.trim()
 }
 
 const showNewGroup = ref(false)
@@ -312,7 +327,7 @@ onMounted(async () => {
             <template v-else>
               <a
                 v-if="m.content && isPlainUrl(m.content)"
-                :href="m.content.trim()"
+                :href="callLinkHref(m.content)"
                 target="_blank"
                 rel="noopener noreferrer"
                 class="attachment-link"
