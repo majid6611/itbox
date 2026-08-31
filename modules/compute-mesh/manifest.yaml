@@ -1,0 +1,26 @@
+id: compute-mesh
+name: Compute Mesh (Power Management)
+description: >-
+  Turn company computers on, off, or restart remotely — including
+  machines that are fully powered off or have a hung/crashed OS, using
+  Intel AMT/vPro (an out-of-band management channel built into supported
+  business hardware, independent of the operating system). Self-hosts
+  MeshCentral as the engine, but you only ever see this platform's own
+  simple panel — register a computer's name, AMT address, and AMT
+  credentials, then use the on/off/restart buttons. Requires AMT to
+  already be provisioned on the target machine (via its BIOS/MEBx setup)
+  — this module doesn't do that provisioning itself.
+category: mesh
+version: "1.0.0"
+compose_file: docker-compose.yaml
+config_schema:
+  # Generated once at install, used only by the init container (to create
+  # MeshCentral's one service account) and by our own backend (to
+  # authenticate as that account) — never shown in any UI, admin or
+  # employee, matching video-jitsi's internal-password fields.
+  - key: api_password
+    label: Internal MeshCentral service-account password
+    type: secret
+    hidden: true
+soft_dependencies: []
+internal_panel: /compute-mesh

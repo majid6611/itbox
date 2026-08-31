@@ -171,6 +171,13 @@ func registerModules(api huma.API, s *Server) {
 				s.bootstrapInternalGateway(bgCtx)
 			}()
 		}
+		if in.ID == "compute-mesh" {
+			// Same shape as vpn-netbird's bootstrap below: wait for the
+			// module to actually come up, then do the one-time setup
+			// (create the device group) that has no config-time
+			// equivalent — see bootstrapComputeMesh's own doc comment.
+			go s.bootstrapComputeMesh(context.Background())
+		}
 		if in.ID == "fileshare-webdav" {
 			// Every other user/group management endpoint creates a WebDAV
 			// folder at the moment it creates the LDAP account/group — but

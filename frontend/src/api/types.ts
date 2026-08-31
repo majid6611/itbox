@@ -123,6 +123,16 @@ export interface ThemeResponse {
   theme: ThemeName
 }
 
+export interface MeshDevice {
+  id: number
+  name: string
+}
+
+export interface MeshDevicesResponse {
+  available: boolean
+  devices: MeshDevice[]
+}
+
 export interface BackupConfig {
   destination: 'local' | 'aws'
   aws_access_key_id: string

@@ -65,6 +65,7 @@ func NewRouter(s *Server) http.Handler {
 	registerVpn(api, s)
 	registerSettings(api, s)
 	registerBackup(api, s)
+	registerComputeMesh(api, s)
 	registerPortal(api, s)
 
 	s.startBackupScheduler(context.Background())
