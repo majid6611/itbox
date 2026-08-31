@@ -104,6 +104,13 @@ type PortalModulesOutput struct {
 		// modules/manifest.go), so a new feature-module needs zero changes
 		// here to show up correctly once it exists.
 		Modules map[string]bool `json:"modules"`
+		// VideoCallBaseURL is video-jitsi's own hostname, or "" if it isn't
+		// installed and running. A dedicated field rather than another
+		// Modules entry: unlike wiki/chat, video-jitsi isn't a path under
+		// this platform's own origin, it's a whole separate subdomain, so
+		// the frontend needs the real base URL to build a room link from,
+		// not just a yes/no.
+		VideoCallBaseURL string `json:"video_call_base_url,omitempty"`
 	}
 }
 
@@ -202,6 +209,11 @@ func registerPortal(api huma.API, s *Server) {
 			}
 			status, ok, err := s.Modules.GetInstalled(ctx, m.ID)
 			out.Body.Modules[m.ID] = err == nil && ok && status.Status == "running"
+		}
+		if status, ok, err := s.Modules.GetInstalled(ctx, "video-jitsi"); err == nil && ok && status.Status == "running" {
+			// https, not http — video-jitsi is served over a real (if
+			// self-signed) TLS listener, see its manifest's needs_tls.
+			out.Body.VideoCallBaseURL = "https://" + s.Modules.Hostname("video-jitsi", "")
 		}
 		return out, nil
 	})

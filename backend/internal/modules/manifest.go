@@ -64,6 +64,17 @@ type Manifest struct {
 	// data-isolated from core.
 	NeedsDatabase bool `yaml:"needs_database,omitempty" json:"needs_database,omitempty"`
 
+	// NeedsTLS means this module's routes get served over a real HTTPS/WSS
+	// listener (self-signed cert, generated and managed entirely by the
+	// edge proxy — see proxy.Manager's ensureSelfSignedCert) instead of
+	// the platform's usual plain-HTTP vhost. Exists because of video-jitsi:
+	// its web frontend hardcodes wss:// for call signaling with no plain-
+	// HTTP fallback at all, confirmed by reading the vendor image's own
+	// config template — not a config option that platform-wide TLS
+	// (whenever that lands) will make redundant for every module, but this
+	// one specifically needs it now, self-signed cert warning and all.
+	NeedsTLS bool `yaml:"needs_tls,omitempty" json:"needs_tls,omitempty"`
+
 	// InternalPanel is a path in this platform's own frontend (e.g.
 	// "/users") shown as a "Manage" link when the module is running —
 	// for modules whose admin UI is a page we built ourselves rather

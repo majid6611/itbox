@@ -1,0 +1,91 @@
+# Four upstream Jitsi Meet components (web/prosody/jicofo/jvb), pinned to
+# the same stable release tag so they're guaranteed compatible with each
+# other. Deliberately not setting any of the XMPP_*_DOMAIN variables the
+# upstream docker-compose.yml shows — every image already defaults to the
+# same values (meet.jitsi / auth.meet.jitsi / etc.), and hand-copying them
+# here would just be a chance for one service's copy to drift from
+# another's. The one thing that has to line up across containers instead
+# of relying on a shared default is prosody's network alias below
+# (xmpp.meet.jitsi) — that's what JICOFO_AUTH_PASSWORD's default
+# XMPP_SERVER value actually resolves to.
+networks:
+  edge:
+    external: true
+    name: it-platform-edge
+  meet: {}
+
+services:
+  web:
+    image: jitsi/web:stable-11031
+    restart: unless-stopped
+    environment:
+      # https, not http — this image's own config template hardcodes
+      # wss:// for call signaling regardless of PUBLIC_URL's scheme, so a
+      # plain-http value here doesn't just look wrong, it silently breaks
+      # every call (confirmed by inspecting the rendered config.js). See
+      # this module's needs_tls: true in manifest.yaml, which is what
+      # actually makes https://${MODULE_ID}.${BASE_DOMAIN} a real,
+      # working endpoint rather than a lie.
+      PUBLIC_URL: "https://${MODULE_ID}.${BASE_DOMAIN}"
+      TZ: "UTC"
+      # Signaling over a WebSocket to prosody rather than BOSH long-polling
+      # — see backend/internal/proxy/nginx.go's SetRoutes for the matching
+      # nginx Upgrade/Connection passthrough this needs to actually work
+      # through the edge proxy.
+      ENABLE_XMPP_WEBSOCKET: "1"
+    depends_on:
+      - prosody
+      - jicofo
+      - jvb
+    networks:
+      - meet
+      - edge
+
+  prosody:
+    image: jitsi/prosody:stable-11031
+    restart: unless-stopped
+    environment:
+      TZ: "UTC"
+      ENABLE_XMPP_WEBSOCKET: "1"
+      JICOFO_AUTH_PASSWORD: ${jicofo_auth_password}
+      JVB_AUTH_PASSWORD: ${jvb_auth_password}
+      # Unset entirely by default (confirmed: no external_services/
+      # turncredentials module loads at all without these) — a public STUN
+      # server for ICE candidate gathering, standard practice for a
+      # self-hosted single-JVB deployment with no TURN relay of its own.
+      STUN_HOST: "stun.l.google.com"
+      STUN_PORT: "19302"
+    networks:
+      meet:
+        aliases:
+          - xmpp.meet.jitsi
+
+  jicofo:
+    image: jitsi/jicofo:stable-11031
+    restart: unless-stopped
+    environment:
+      TZ: "UTC"
+      JICOFO_AUTH_PASSWORD: ${jicofo_auth_password}
+    depends_on:
+      - prosody
+    networks:
+      - meet
+
+  jvb:
+    image: jitsi/jvb:stable-11031
+    restart: unless-stopped
+    environment:
+      TZ: "UTC"
+      JVB_AUTH_PASSWORD: ${jvb_auth_password}
+      JVB_PORT: "10000"
+    # The one component that can't go through the edge nginx — WebRTC
+    # media is UDP, not HTTP. Published straight to the host, same
+    # reasoning as vpn-netbird's STUN port (see that module's compose
+    # file): browsers on the internet need a real reachable address for
+    # ICE, not a proxy that only speaks HTTP.
+    ports:
+      - "10000:10000/udp"
+    depends_on:
+      - prosody
+    networks:
+      - meet
