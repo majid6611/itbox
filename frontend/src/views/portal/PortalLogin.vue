@@ -26,7 +26,7 @@ async function submit() {
 
 <template>
   <div class="login-wrap">
-    <form class="login-box" @submit.prevent="submit">
+    <form class="login-box card" @submit.prevent="submit">
       <h1>Employee Portal</h1>
       <p class="hint">Log in with your company username and password.</p>
       <label>
@@ -52,29 +52,28 @@ async function submit() {
 .login-box {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 0.85rem;
   width: 20rem;
-  border: 1px solid #333;
-  border-radius: 8px;
-  padding: 1.5rem;
+  padding: 2rem 1.85rem;
 }
 .login-box h1 {
-  font-size: 1.25rem;
+  font-size: 1.3rem;
   margin: 0;
 }
 .hint {
   font-size: 0.85rem;
-  opacity: 0.8;
+  color: var(--text-dim);
   margin: 0 0 0.25rem;
 }
 label {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
-  font-size: 0.9rem;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+  font-weight: 500;
 }
 .error-message {
-  color: #e5534b;
+  color: var(--danger-text);
   font-size: 0.85rem;
   margin: 0;
 }

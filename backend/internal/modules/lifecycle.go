@@ -57,6 +57,11 @@ type Manager struct {
 	baseDomainMu sync.RWMutex
 	baseDomain   string
 
+	// theme is mutable at runtime the same way, and for the same reason —
+	// an admin picks it from Settings without a redeploy (see SetTheme).
+	themeMu sync.RWMutex
+	theme   string
+
 	// inFlight guards against two lifecycle operations running
 	// concurrently for the same module — e.g. a double-click, or a retry
 	// firing before the first attempt's response comes back. Without
@@ -86,7 +91,13 @@ func NewManager(ctx context.Context, registry *Registry, dockerClient *docker.Cl
 	default:
 		return nil, fmt.Errorf("load base domain: %w", err)
 	}
-	return &Manager{registry: registry, docker: dockerClient, proxy: proxyManager, db: db, dataDir: dataDir, baseDomain: baseDomain, databaseURL: databaseURL}, nil
+
+	theme := "slate"
+	if err := db.QueryRow(ctx, `SELECT theme FROM platform_settings WHERE id = true`).Scan(&theme); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return nil, fmt.Errorf("load theme: %w", err)
+	}
+
+	return &Manager{registry: registry, docker: dockerClient, proxy: proxyManager, db: db, dataDir: dataDir, baseDomain: baseDomain, theme: theme, databaseURL: databaseURL}, nil
 }
 
 // beginOp claims exclusive access to a module for the duration of a
@@ -133,6 +144,40 @@ func (m *Manager) SetBaseDomain(ctx context.Context, domain string) error {
 	m.baseDomainMu.Lock()
 	m.baseDomain = domain
 	m.baseDomainMu.Unlock()
+	return nil
+}
+
+// Theme returns which of the two shipped color/type directions ("slate"
+// or "stone") the frontend should render — see Settings.
+func (m *Manager) Theme() string {
+	m.themeMu.RLock()
+	defer m.themeMu.RUnlock()
+	return m.theme
+}
+
+// SetTheme persists the platform-wide theme choice and applies it
+// immediately in memory. Both portals read this live (via GET /api/theme,
+// unauthenticated, since the pre-login screens need it too), so there's
+// nothing else to "reinstall" the way SetBaseDomain's callers do — a save
+// here takes effect on next page load everywhere.
+//
+// Plain UPDATE, not SetBaseDomain's INSERT ... ON CONFLICT DO UPDATE — the
+// platform_settings row always already exists by the time this can be
+// called (NewManager seeds it unconditionally at boot), and Postgres
+// checks NOT NULL constraints against an INSERT's candidate row even when
+// it's ultimately redirected to the UPDATE branch, so an INSERT that
+// omits the (default-less, NOT NULL) base_domain column fails outright.
+func (m *Manager) SetTheme(ctx context.Context, theme string) error {
+	if theme != "slate" && theme != "stone" {
+		return fmt.Errorf("unknown theme %q", theme)
+	}
+	_, err := m.db.Exec(ctx, `UPDATE platform_settings SET theme = $1 WHERE id = true`, theme)
+	if err != nil {
+		return fmt.Errorf("save theme: %w", err)
+	}
+	m.themeMu.Lock()
+	m.theme = theme
+	m.themeMu.Unlock()
 	return nil
 }
 

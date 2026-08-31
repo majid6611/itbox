@@ -76,27 +76,34 @@ function insertTable() {
 <style scoped>
 .toolbar {
   display: flex;
-  gap: 0.25rem;
+  gap: 0.2rem;
   flex-wrap: wrap;
   align-items: center;
-  border: 1px solid #333;
+  border: 1px solid var(--border);
   border-bottom: none;
-  border-radius: 6px 6px 0 0;
-  padding: 0.35rem;
+  border-radius: 10px 10px 0 0;
+  padding: 0.4rem;
+  background: var(--surface);
 }
 .toolbar button {
-  font-size: 0.85rem;
-  padding: 0.25rem 0.5rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0.3rem 0.55rem;
+  background: transparent;
+  color: var(--text-dim);
+}
+.toolbar button:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--text);
 }
 .toolbar button.active {
-  background: #4a9eff;
-  color: white;
-  border-color: #4a9eff;
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 .sep {
   width: 1px;
   align-self: stretch;
-  background: #333;
-  margin: 0 0.15rem;
+  background: var(--border);
+  margin: 0 0.2rem;
 }
 </style>

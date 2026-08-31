@@ -1,0 +1,234 @@
+/* The platform's two shipped visual directions — "slate" (cooler,
+ * technical) and "stone" (warmer, calmer) — see Settings for the picker.
+ * This is a brand choice the admin makes, not a light/dark-mode switch, so
+ * it doesn't follow prefers-color-scheme; :root carries the slate values
+ * as the default so nothing is unstyled before stores/theme.ts sets
+ * data-theme on <html> after its first fetch.
+ *
+ * Every component should read colors/fonts through these variables, never
+ * a literal hex — that's what makes the picker in Settings actually work.
+ */
+:root,
+:root[data-theme='slate'] {
+  --bg: #f5f7f9;
+  --surface: #ffffff;
+  --surface-hover: #eef2f5;
+  --border: #e2e8ed;
+  --border-strong: #c9d3da;
+  --text: #16202b;
+  --text-dim: #5b6b7a;
+  --text-faint: #93a3af;
+
+  --accent: #0e7c86;
+  --accent-hover: #0b646c;
+  --accent-contrast: #ffffff;
+  --accent-soft: #e3f1f2;
+
+  --success-bg: #e4f4ea;
+  --success-text: #1f7a45;
+  --warning-bg: #fbf1de;
+  --warning-text: #9c6b14;
+  --danger-bg: #fbe9e7;
+  --danger-text: #a8392e;
+
+  --code-bg: rgba(22, 32, 43, 0.06);
+  --shadow-card: 0 1px 2px rgba(16, 24, 32, 0.04), 0 8px 24px -16px rgba(16, 24, 32, 0.22);
+
+  --font-ui: 'Manrope', system-ui, sans-serif;
+  --font-body: 'Manrope', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+
+  --admin-nav-bg: #12202b;
+  --admin-nav-text: #ffffff;
+  --admin-nav-text-dim: #9daebb;
+  --admin-nav-active-bg: #1b3040;
+  --admin-nav-border: #1b2c3a;
+}
+
+:root[data-theme='stone'] {
+  --bg: #efede7;
+  --surface: #ffffff;
+  --surface-hover: #f5f3ee;
+  --border: #dbd7cc;
+  --border-strong: #c7c1b3;
+  --text: #2a2521;
+  --text-dim: #6e675c;
+  --text-faint: #a79f91;
+
+  --accent: #6b3f5e;
+  --accent-hover: #55324a;
+  --accent-contrast: #ffffff;
+  --accent-soft: #f0e7ed;
+
+  --success-bg: #e4efe7;
+  --success-text: #2e6b44;
+  --warning-bg: #f5ead8;
+  --warning-text: #93641c;
+  --danger-bg: #f5e4e1;
+  --danger-text: #9c3f37;
+
+  --code-bg: rgba(42, 37, 33, 0.06);
+  --shadow-card: 0 1px 2px rgba(30, 24, 18, 0.05), 0 8px 24px -16px rgba(30, 24, 18, 0.24);
+
+  --font-ui: 'Outfit', system-ui, sans-serif;
+  --font-body: 'Public Sans', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+
+  --admin-nav-bg: #2a2521;
+  --admin-nav-text: #ffffff;
+  --admin-nav-text-dim: #b3aaa0;
+  --admin-nav-active-bg: #40372f;
+  --admin-nav-border: #3a322b;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--font-ui);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 0 0 0.6rem;
+  text-wrap: balance;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+a:hover {
+  color: var(--accent-hover);
+}
+
+code {
+  font-family: var(--font-mono);
+  background: var(--code-bg);
+  padding: 0.05rem 0.35rem;
+  border-radius: 4px;
+  font-size: 0.88em;
+}
+
+button,
+input,
+select,
+textarea {
+  font-family: var(--font-body);
+  font-size: 0.9rem;
+}
+
+button {
+  background: var(--accent);
+  color: var(--accent-contrast);
+  border: none;
+  border-radius: 7px;
+  padding: 0.5rem 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.12s ease;
+}
+button:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* A secondary/ghost button — most views need one alongside the primary
+ * accent button (Cancel next to Save, etc.). */
+button.secondary {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+}
+button.secondary:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+
+input[type='radio'],
+input[type='checkbox'] {
+  accent-color: var(--accent);
+}
+
+input[type='text'],
+input[type='password'],
+input[type='email'],
+input[type='number'],
+input[type='search'],
+select,
+textarea {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  border-radius: 7px;
+  padding: 0.5rem 0.7rem;
+}
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-faint);
+}
+
+/* Status pill — module/service state at a glance. Semantic color stays
+ * separate from --accent everywhere in the app; these three are the only
+ * "good/warn/bad" colors used, never the brand accent. */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--font-ui);
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.22rem 0.6rem;
+  border-radius: 99px;
+  white-space: nowrap;
+}
+.pill.pill-good {
+  background: var(--success-bg);
+  color: var(--success-text);
+}
+.pill.pill-warn {
+  background: var(--warning-bg);
+  color: var(--warning-text);
+}
+.pill.pill-bad {
+  background: var(--danger-bg);
+  color: var(--danger-text);
+}
+.pill.pill-neutral {
+  background: var(--border);
+  color: var(--text-dim);
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow-card);
+}

@@ -9,13 +9,20 @@ onMounted(() => modules.fetchAll())
 function statusFor(id: string) {
   return modules.statuses[id]?.status ?? 'not_installed'
 }
+
+function pillClass(status: string) {
+  if (status === 'running') return 'pill-good'
+  if (status === 'stopped' || status === 'installing') return 'pill-warn'
+  if (status === 'error') return 'pill-bad'
+  return 'pill-neutral'
+}
 </script>
 
 <template>
   <div>
     <h1>Dashboard</h1>
-    <p v-if="modules.loading">Loading…</p>
-    <table v-else>
+    <p v-if="modules.loading" class="hint">Loading…</p>
+    <table v-else class="card">
       <thead>
         <tr>
           <th>Module</th>
@@ -26,42 +33,43 @@ function statusFor(id: string) {
         <tr v-for="m in modules.catalog" :key="m.id">
           <td>{{ m.name }}</td>
           <td>
-            <span :class="['badge', statusFor(m.id)]">{{ statusFor(m.id) }}</span>
+            <span class="pill" :class="pillClass(statusFor(m.id))">{{ statusFor(m.id) }}</span>
           </td>
         </tr>
       </tbody>
     </table>
-    <p v-if="!modules.loading && modules.catalog.length === 0">No modules in the catalog yet.</p>
+    <p v-if="!modules.loading && modules.catalog.length === 0" class="hint">No modules in the catalog yet.</p>
   </div>
 </template>
 
 <style scoped>
+h1 {
+  margin-bottom: 1.5rem;
+}
 table {
   border-collapse: collapse;
   width: 100%;
-  max-width: 640px;
+  max-width: 36rem;
+  overflow: hidden;
 }
 th,
 td {
   text-align: left;
-  padding: 0.5rem;
-  border-bottom: 1px solid #333;
+  padding: 0.65rem 1rem;
 }
-.badge {
-  padding: 0.15rem 0.5rem;
-  border-radius: 4px;
-  font-size: 0.85rem;
+th {
+  font-family: var(--font-ui);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-faint);
+  border-bottom: 1px solid var(--border);
 }
-.badge.running {
-  background: #1a7f37;
-  color: white;
+tbody tr:not(:last-child) td {
+  border-bottom: 1px solid var(--border);
 }
-.badge.stopped {
-  background: #b08800;
-  color: white;
-}
-.badge.not_installed {
-  background: #555;
-  color: white;
+.hint {
+  color: var(--text-dim);
+  font-size: 0.9rem;
 }
 </style>

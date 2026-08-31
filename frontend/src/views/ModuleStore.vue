@@ -88,7 +88,7 @@ async function run(id: string, action: 'enable' | 'disable' | 'uninstall') {
         <p class="category">{{ m.category }}</p>
 
         <div v-if="statusFor(m.id) === 'installing'" class="installing">
-          <span class="badge installing">installing…</span>
+          <span class="pill pill-neutral">installing…</span>
           <p class="hint">This can take a few minutes the first time (pulling images) — feel free to leave this page, it keeps running.</p>
         </div>
 
@@ -96,7 +96,7 @@ async function run(id: string, action: 'enable' | 'disable' | 'uninstall') {
           <p v-if="statusFor(m.id) === 'error'" class="error-message">
             Install failed: {{ modules.statuses[m.id]?.error_message }}
           </p>
-          <button :disabled="!m.available" @click="openInstallForm(m)">
+          <button :class="{ secondary: !m.available }" :disabled="!m.available" @click="openInstallForm(m)">
             {{ !m.available ? 'Coming soon' : statusFor(m.id) === 'error' ? 'Retry install' : 'Install' }}
           </button>
 
@@ -118,10 +118,10 @@ async function run(id: string, action: 'enable' | 'disable' | 'uninstall') {
         </div>
 
         <div v-else class="actions">
-          <span :class="['badge', statusFor(m.id)]">{{ statusFor(m.id) }}</span>
+          <span class="pill" :class="statusFor(m.id) === 'running' ? 'pill-good' : 'pill-warn'">{{ statusFor(m.id) }}</span>
           <button v-if="statusFor(m.id) === 'stopped'" :disabled="busy[m.id]" @click="run(m.id, 'enable')">Enable</button>
-          <button v-if="statusFor(m.id) === 'running'" :disabled="busy[m.id]" @click="run(m.id, 'disable')">Disable</button>
-          <button :disabled="busy[m.id]" @click="run(m.id, 'uninstall')">Uninstall</button>
+          <button v-if="statusFor(m.id) === 'running'" class="secondary" :disabled="busy[m.id]" @click="run(m.id, 'disable')">Disable</button>
+          <button class="secondary" :disabled="busy[m.id]" @click="run(m.id, 'uninstall')">Uninstall</button>
 
           <ul v-if="statusFor(m.id) === 'running' && (modules.links[m.id]?.length || m.internal_panel)" class="links">
             <li v-if="m.internal_panel">
@@ -133,10 +133,10 @@ async function run(id: string, action: 'enable' | 'disable' | 'uninstall') {
           </ul>
 
           <div v-if="statusFor(m.id) === 'running' && hasPrimaryRoute(m)" class="visibility">
-            <span :class="['badge', isPrivate(m.id) ? 'private' : 'public']">
+            <span class="pill" :class="isPrivate(m.id) ? 'pill-neutral' : 'pill-warn'">
               {{ isPrivate(m.id) ? 'Private (VPN only)' : 'Public (on the internet)' }}
             </span>
-            <button :disabled="busy[m.id]" @click="toggleVisibility(m.id)">
+            <button class="secondary" :disabled="busy[m.id]" @click="toggleVisibility(m.id)">
               {{ isPrivate(m.id) ? 'Make public' : 'Make private' }}
             </button>
             <p v-if="isPrivate(m.id) && modules.statuses[m.id]?.private_port" class="hint">
@@ -151,20 +151,35 @@ async function run(id: string, action: 'enable' | 'disable' | 'uninstall') {
 </template>
 
 <style scoped>
+h1 {
+  margin-bottom: 1.5rem;
+}
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
   gap: 1rem;
 }
 .card {
-  border: 1px solid #333;
-  border-radius: 8px;
-  padding: 1rem;
+  padding: 1.1rem 1.2rem;
+}
+.card h2 {
+  font-size: 1.05rem;
+  margin-bottom: 0.35rem;
+}
+.card p {
+  color: var(--text-dim);
+  font-size: 0.88rem;
+  line-height: 1.55;
+  margin: 0 0 0.5rem;
 }
 .category {
   text-transform: uppercase;
-  font-size: 0.75rem;
-  opacity: 0.7;
+  letter-spacing: 0.04em;
+  font-family: var(--font-ui);
+  font-weight: 700;
+  font-size: 0.68rem;
+  color: var(--text-faint);
+  margin-bottom: 0.75rem;
 }
 .config-form {
   display: flex;
@@ -176,7 +191,8 @@ async function run(id: string, action: 'enable' | 'disable' | 'uninstall') {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
-  font-size: 0.9rem;
+  font-size: 0.85rem;
+  font-weight: 500;
 }
 .actions {
   display: flex;
@@ -184,31 +200,15 @@ async function run(id: string, action: 'enable' | 'disable' | 'uninstall') {
   gap: 0.5rem;
   flex-wrap: wrap;
 }
-.badge {
-  padding: 0.15rem 0.5rem;
-  border-radius: 4px;
-  font-size: 0.85rem;
-}
-.badge.running {
-  background: #1a7f37;
-  color: white;
-}
-.badge.stopped {
-  background: #b08800;
-  color: white;
-}
-.badge.installing {
-  background: #555;
-  color: white;
-}
 .installing .hint {
   font-size: 0.85rem;
-  opacity: 0.75;
+  color: var(--text-dim);
   margin-top: 0.5rem;
 }
 .error-message {
-  color: #e5534b;
-  font-size: 0.9rem;
+  color: var(--danger-text);
+  font-size: 0.85rem;
+  margin-bottom: 0.6rem;
 }
 .secret-field {
   display: flex;
@@ -216,7 +216,7 @@ async function run(id: string, action: 'enable' | 'disable' | 'uninstall') {
 }
 .secret-field input {
   flex: 1;
-  font-family: monospace;
+  font-family: var(--font-mono);
 }
 .links {
   list-style: none;
@@ -225,6 +225,8 @@ async function run(id: string, action: 'enable' | 'disable' | 'uninstall') {
   margin: 0;
   padding: 0;
   width: 100%;
+  font-size: 0.85rem;
+  font-weight: 600;
 }
 .visibility {
   width: 100%;
@@ -233,27 +235,13 @@ async function run(id: string, action: 'enable' | 'disable' | 'uninstall') {
   gap: 0.5rem;
   flex-wrap: wrap;
   margin-top: 0.5rem;
-  padding-top: 0.5rem;
-  border-top: 1px solid #333;
+  padding-top: 0.65rem;
+  border-top: 1px solid var(--border);
 }
 .visibility .hint {
   width: 100%;
-  font-size: 0.85rem;
-  opacity: 0.8;
+  font-size: 0.82rem;
+  color: var(--text-dim);
   margin: 0;
-}
-.visibility .hint code {
-  font-family: monospace;
-  background: rgba(255, 255, 255, 0.08);
-  padding: 0.1rem 0.4rem;
-  border-radius: 4px;
-}
-.badge.private {
-  background: #555;
-  color: white;
-}
-.badge.public {
-  background: #b08800;
-  color: white;
 }
 </style>

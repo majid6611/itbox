@@ -309,15 +309,15 @@ onMounted(async () => {
 <style scoped>
 .chat-layout {
   display: flex;
-  gap: 1.5rem;
+  gap: 2rem;
   align-items: flex-start;
-  height: calc(100vh - 6rem);
+  height: calc(100vh - 8rem);
 }
 .sidebar {
   width: 16rem;
   flex-shrink: 0;
-  border-right: 1px solid #333;
-  padding-right: 1rem;
+  border-right: 1px solid var(--border);
+  padding-right: 1.25rem;
   overflow-y: auto;
   height: 100%;
 }
@@ -325,31 +325,34 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 0.85rem;
+  font-size: 0.72rem;
+  font-family: var(--font-ui);
+  font-weight: 700;
   text-transform: uppercase;
-  opacity: 0.7;
-  margin: 1rem 0 0.35rem;
+  letter-spacing: 0.05em;
+  color: var(--text-faint);
+  margin: 1.25rem 0 0.4rem;
 }
 .sidebar h2:first-child {
   margin-top: 0;
 }
 .new-group-btn {
   font-size: 0.8rem;
-  padding: 0 0.4rem;
-  line-height: 1.4;
+  padding: 0 0.45rem;
+  line-height: 1.5;
 }
 .new-group-form {
   display: flex;
   flex-direction: column;
-  gap: 0.3rem;
-  margin-bottom: 0.5rem;
+  gap: 0.35rem;
+  margin-bottom: 0.6rem;
   font-size: 0.85rem;
 }
 .member-check {
   display: flex;
   align-items: center;
-  gap: 0.3rem;
-  font-weight: normal;
+  gap: 0.35rem;
+  font-weight: 400;
   text-transform: none;
 }
 .target-list {
@@ -360,36 +363,39 @@ onMounted(async () => {
 .target-list button {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: 0.45rem;
   width: 100%;
   text-align: left;
   background: none;
   border: none;
-  padding: 0.3rem 0.4rem;
+  padding: 0.35rem 0.5rem;
   cursor: pointer;
-  color: inherit;
-  border-radius: 4px;
-  font-size: 0.9rem;
+  color: var(--text-dim);
+  font-weight: 400;
+  border-radius: 6px;
+  font-size: 0.88rem;
 }
 .target-list button:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--surface-hover);
+  color: var(--text);
 }
 .target-list button.active {
-  background: rgba(255, 255, 255, 0.08);
-  font-weight: bold;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
 }
 .dot {
   width: 0.5rem;
   height: 0.5rem;
   border-radius: 50%;
-  background: #555;
+  background: var(--border-strong);
   flex-shrink: 0;
 }
 .dot.online {
-  background: #1a7f37;
+  background: var(--success-text);
 }
 .dot.unread {
-  background: #4a9eff;
+  background: var(--accent);
 }
 .thread-pane {
   flex: 1;
@@ -408,7 +414,7 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  font-size: 1.2rem;
+  font-size: 1.15rem;
   margin: 0 0 0.5rem;
 }
 .header-actions {
@@ -421,36 +427,47 @@ onMounted(async () => {
   align-items: center;
   gap: 0.5rem;
 }
-.notif-btn {
-  font-size: 0.85rem;
+.notif-btn,
+.group-actions button {
+  font-size: 0.8rem;
+  padding: 0.35rem 0.65rem;
 }
 .deleted-tombstone {
-  margin: 0.15rem 0 0;
+  margin: 0.2rem 0 0;
   font-style: italic;
-  opacity: 0.6;
+  color: var(--text-faint);
+  background: transparent;
+  border: 1px dashed var(--border-strong);
+  padding: 0.45rem 0.7rem;
+  border-radius: 12px;
+  display: inline-block;
 }
 .edit-form {
   display: flex;
   gap: 0.4rem;
-  margin-top: 0.15rem;
+  margin-top: 0.2rem;
 }
 .message-actions {
   display: flex;
-  gap: 0.5rem;
-  margin-top: 0.2rem;
-  opacity: 0.5;
-  font-size: 0.8rem;
+  gap: 0.6rem;
+  margin-top: 0.25rem;
+  opacity: 0;
+  font-size: 0.76rem;
+  transition: opacity 0.1s ease;
+}
+.message:hover .message-actions {
+  opacity: 1;
 }
 .message-actions button {
   background: none;
   border: none;
-  color: inherit;
+  color: var(--text-faint);
   cursor: pointer;
   padding: 0;
-  text-decoration: underline;
+  font-weight: 600;
 }
-.message-actions:hover {
-  opacity: 1;
+.message-actions button:hover {
+  color: var(--text-dim);
 }
 .add-member-form {
   display: flex;
@@ -460,12 +477,13 @@ onMounted(async () => {
 .thread {
   flex: 1;
   overflow-y: auto;
-  border: 1px solid #333;
-  border-radius: 8px;
-  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1rem;
   display: flex;
   flex-direction: column;
-  gap: 0.6rem;
+  gap: 0.7rem;
+  background: var(--surface);
 }
 .message {
   max-width: 32rem;
@@ -478,56 +496,92 @@ onMounted(async () => {
   display: flex;
   gap: 0.5rem;
   align-items: baseline;
+  font-size: 0.8rem;
+}
+.message-meta strong {
+  font-family: var(--font-ui);
 }
 .message.mine .message-meta {
   justify-content: flex-end;
 }
+/* The message bubble itself — plain text before this always rendered flat
+   against the thread background, which read as a list of statements, not
+   a conversation. */
 .message p {
-  margin: 0.15rem 0 0;
+  margin: 0.25rem 0 0;
+  display: inline-block;
+  background: var(--bg);
+  padding: 0.5rem 0.8rem;
+  border-radius: 14px;
+  text-align: left;
+  line-height: 1.45;
+}
+.message.mine p {
+  background: var(--accent);
+  color: var(--accent-contrast);
 }
 .attachment-link {
   display: inline-block;
-  margin-top: 0.15rem;
-  font-size: 0.9rem;
+  margin-top: 0.25rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  background: var(--bg);
+  padding: 0.45rem 0.75rem;
+  border-radius: 14px;
+}
+.message.mine .attachment-link {
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 .emoji-picker {
   display: flex;
   flex-wrap: wrap;
   gap: 0.15rem;
-  border: 1px solid #333;
-  border-radius: 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
   padding: 0.5rem;
   margin-top: 0.5rem;
+  background: var(--surface);
 }
 .emoji-btn {
   background: none;
   border: none;
   font-size: 1.2rem;
-  padding: 0.2rem;
+  padding: 0.25rem;
   cursor: pointer;
-  border-radius: 4px;
+  border-radius: 6px;
   line-height: 1;
 }
 .emoji-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--surface-hover);
 }
 .composer {
   display: flex;
   gap: 0.5rem;
-  margin-top: 0.75rem;
+  margin-top: 0.85rem;
+  align-items: center;
 }
 .composer input[type='text'] {
   flex: 1;
 }
+.composer > button[type='button'] {
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 1.05rem;
+  padding: 0.45rem 0.6rem;
+}
+.composer > button[type='button']:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
 .empty-state {
-  opacity: 0.7;
+  color: var(--text-dim);
 }
 .hint {
-  font-size: 0.9rem;
-  opacity: 0.7;
+  font-size: 0.88rem;
+  color: var(--text-dim);
 }
 .hint-inline {
   font-size: 0.8rem;
-  opacity: 0.6;
+  color: var(--text-faint);
 }
 </style>

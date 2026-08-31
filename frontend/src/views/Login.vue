@@ -28,8 +28,9 @@ async function handleSubmit() {
 
 <template>
   <div class="login">
-    <form @submit.prevent="handleSubmit">
+    <form class="card" @submit.prevent="handleSubmit">
       <h1>IT Platform</h1>
+      <p class="subtitle">Admin sign-in</p>
       <label>
         Email
         <input v-model="email" type="email" required autocomplete="username" />
@@ -48,20 +49,34 @@ async function handleSubmit() {
 .login {
   display: flex;
   justify-content: center;
-  margin-top: 4rem;
+  margin-top: 4.5rem;
 }
 form {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 0.85rem;
   width: 320px;
+  padding: 2rem 1.85rem;
+}
+h1 {
+  font-size: 1.3rem;
+  margin-bottom: 0.1rem;
+}
+.subtitle {
+  color: var(--text-dim);
+  font-size: 0.85rem;
+  margin: 0 0 0.6rem;
 }
 label {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+  font-weight: 500;
 }
 .error {
-  color: #d33;
+  color: var(--danger-text);
+  font-size: 0.85rem;
+  margin: 0;
 }
 </style>

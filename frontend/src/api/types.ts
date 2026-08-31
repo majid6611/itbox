@@ -112,8 +112,15 @@ export interface EnableVpnResponse {
   setup_key: string
 }
 
+export type ThemeName = 'slate' | 'stone'
+
 export interface SettingsResponse {
   base_domain: string
+  theme: ThemeName
+}
+
+export interface ThemeResponse {
+  theme: ThemeName
 }
 
 export interface BackupConfig {
