@@ -75,7 +75,7 @@ async function disable(username: string) {
             <td>{{ u.username }}</td>
             <td>{{ u.name }}</td>
             <td>
-              <span :class="['badge', u.has_access ? 'running' : 'stopped']">{{ u.has_access ? 'enabled' : 'off' }}</span>
+              <span class="pill" :class="u.has_access ? 'pill-good' : 'pill-neutral'">{{ u.has_access ? 'enabled' : 'off' }}</span>
             </td>
             <td class="row-actions">
               <a
@@ -84,7 +84,7 @@ async function disable(username: string) {
                 :href="`/api/vpn/users/${u.username}/download`"
               >Download setup file</a>
               <span v-else-if="u.has_access" class="button disabled" title="Set a domain in Settings first">Download setup file</span>
-              <button v-if="u.has_access" :disabled="busy[u.username]" @click="disable(u.username)">Remove access</button>
+              <button v-if="u.has_access" class="secondary" :disabled="busy[u.username]" @click="disable(u.username)">Remove access</button>
               <button v-else :disabled="busy[u.username] || !vpn.domainConfigured" @click="enable(u.username)">Give VPN access</button>
             </td>
           </tr>
@@ -112,7 +112,7 @@ async function disable(username: string) {
             <td>{{ d.name }} <span class="hint-inline">({{ d.os }})</span></td>
             <td><code>{{ d.ip }}</code></td>
             <td>
-              <span :class="['badge', d.connected ? 'running' : 'stopped']">{{ d.connected ? 'connected' : 'offline' }}</span>
+              <span class="pill" :class="d.connected ? 'pill-good' : 'pill-neutral'">{{ d.connected ? 'connected' : 'offline' }}</span>
             </td>
             <td>{{ new Date(d.last_seen).toLocaleString() }}</td>
           </tr>
@@ -124,84 +124,96 @@ async function disable(username: string) {
 </template>
 
 <style scoped>
+h1 {
+  margin-bottom: 1.5rem;
+}
+h2 {
+  margin-top: 2.5rem;
+}
 .notice {
-  border: 1px solid #333;
-  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 10px;
   padding: 1rem;
   max-width: 32rem;
   margin-bottom: 1rem;
+  color: var(--text-dim);
+  font-size: 0.9rem;
 }
 .notice.warning {
-  border-color: #b08800;
+  border-color: var(--warning-text);
+  background: var(--warning-bg);
+  color: var(--warning-text);
 }
 .revealed {
-  border: 1px solid #1a7f37;
-  border-radius: 8px;
+  border: 1px solid var(--success-text);
+  background: var(--success-bg);
+  border-radius: 10px;
   padding: 0.75rem 1rem;
   margin-bottom: 1rem;
   display: flex;
   align-items: center;
   gap: 0.75rem;
   flex-wrap: wrap;
+  color: var(--success-text);
+  font-size: 0.9rem;
 }
 .revealed code {
-  font-family: monospace;
-  background: rgba(255, 255, 255, 0.08);
-  padding: 0.1rem 0.4rem;
-  border-radius: 4px;
+  color: var(--text);
 }
 .hint {
   font-size: 0.9rem;
-  opacity: 0.8;
+  color: var(--text-dim);
   max-width: 40rem;
   margin-bottom: 1.5rem;
+  line-height: 1.55;
 }
 .users-table {
   border-collapse: collapse;
   width: 100%;
 }
-.users-table th,
+.users-table th {
+  text-align: left;
+  padding: 0.6rem 0.7rem;
+  font-family: var(--font-ui);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-faint);
+  border-bottom: 1px solid var(--border);
+}
 .users-table td {
   text-align: left;
-  padding: 0.5rem;
-  border-bottom: 1px solid #333;
+  padding: 0.6rem 0.7rem;
+  border-bottom: 1px solid var(--border);
 }
 .row-actions {
   display: flex;
   gap: 0.4rem;
   align-items: center;
 }
-.badge {
-  padding: 0.15rem 0.5rem;
-  border-radius: 4px;
-  font-size: 0.85rem;
-}
-.badge.running {
-  background: #1a7f37;
-  color: white;
-}
-.badge.stopped {
-  background: #555;
-  color: white;
-}
 .button {
   display: inline-block;
-  padding: 0.35rem 0.7rem;
-  border: 1px solid #555;
-  border-radius: 6px;
+  padding: 0.4rem 0.75rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 7px;
   text-decoration: none;
-  color: inherit;
-  font-size: 0.9rem;
+  color: var(--text);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.button:hover {
+  background: var(--surface-hover);
 }
 .button.disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 .hint-inline {
-  opacity: 0.6;
+  color: var(--text-faint);
   font-size: 0.85rem;
 }
 .users-table code {
-  font-family: monospace;
+  font-family: var(--font-mono);
 }
 </style>

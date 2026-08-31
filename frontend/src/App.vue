@@ -67,7 +67,7 @@ async function handlePortalLogout() {
         <button @click="handlePortalLogout">Log out</button>
       </div>
     </header>
-    <header v-else-if="!inPortal && auth.email" class="topbar">
+    <header v-else-if="!inPortal && auth.email" class="topbar admin">
       <nav>
         <router-link to="/">Dashboard</router-link>
         <router-link to="/modules">Module Store</router-link>
@@ -75,10 +75,10 @@ async function handlePortalLogout() {
       </nav>
       <div class="account">
         <span>{{ auth.email }}</span>
-        <button @click="handleLogout">Log out</button>
+        <button class="secondary" @click="handleLogout">Log out</button>
       </div>
     </header>
-    <main>
+    <main :class="{ admin: !inPortal && auth.email }">
       <router-view />
     </main>
   </div>
@@ -89,30 +89,74 @@ async function handlePortalLogout() {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0.75rem 1.5rem;
-  border-bottom: 1px solid #333;
+  padding: 0.85rem 1.75rem;
+  font-family: var(--font-ui);
+  font-size: 0.9rem;
 }
-.topbar nav a {
-  margin-right: 1rem;
+.topbar:not(.admin) {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.topbar nav {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+}
+.topbar:not(.admin) nav a {
+  color: var(--text-dim);
+  font-weight: 500;
+}
+.topbar:not(.admin) nav a.router-link-active {
+  color: var(--accent);
 }
 .nav-link-with-badge {
   position: relative;
 }
 .nav-badge {
   position: absolute;
-  top: -2px;
-  right: -6px;
+  top: -3px;
+  right: -8px;
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #e5484d;
+  background: var(--danger-text);
+  border: 2px solid var(--surface);
 }
+
+/* The admin portal's own chrome, not the app's light/dark theme — a
+ * deliberately darker header so "you're in the control panel" is legible
+ * at a glance, distinct from the calmer employee portal above. */
+.topbar.admin {
+  background: var(--admin-nav-bg);
+  border-bottom: 1px solid var(--admin-nav-border);
+  color: var(--admin-nav-text);
+}
+.topbar.admin nav a {
+  color: var(--admin-nav-text-dim);
+  font-weight: 500;
+  padding: 0.35rem 0.7rem;
+  border-radius: 7px;
+}
+.topbar.admin nav a:hover {
+  color: var(--admin-nav-text);
+}
+.topbar.admin nav a.router-link-active {
+  background: var(--admin-nav-active-bg);
+  color: var(--admin-nav-text);
+}
+.topbar.admin .account {
+  color: var(--admin-nav-text-dim);
+  font-size: 0.85rem;
+}
+
 .account {
   display: flex;
   align-items: center;
   gap: 0.75rem;
 }
 main {
-  padding: 1.5rem;
+  padding: 2rem 1.75rem;
+  max-width: 72rem;
+  margin: 0 auto;
 }
 </style>

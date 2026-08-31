@@ -434,38 +434,38 @@ watch(
 <style scoped>
 .wiki-layout {
   display: flex;
-  gap: 1.5rem;
+  gap: 2rem;
   align-items: flex-start;
 }
 .sidebar {
   width: 16rem;
   flex-shrink: 0;
-  border-right: 1px solid #333;
-  padding-right: 1rem;
+  border-right: 1px solid var(--border);
+  padding-right: 1.25rem;
 }
 .search-box {
   width: 100%;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.6rem;
   box-sizing: border-box;
 }
 .search-results {
   list-style: none;
-  margin: 0;
+  margin: 0 0 0.5rem;
   padding: 0;
 }
 .search-results li {
   padding: 0.3rem 0;
-  font-size: 0.9rem;
+  font-size: 0.88rem;
 }
 .new-page-btn {
   width: 100%;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.6rem;
 }
 .new-page-form {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
-  margin-bottom: 0.75rem;
+  gap: 0.4rem;
+  margin-bottom: 0.85rem;
 }
 .tree {
   margin: 0;
@@ -476,7 +476,7 @@ watch(
   min-width: 0;
 }
 .empty-state {
-  opacity: 0.7;
+  color: var(--text-dim);
 }
 .page-header {
   display: flex;
@@ -490,7 +490,8 @@ watch(
 }
 .title-input {
   font-size: 1.4rem;
-  font-weight: bold;
+  font-family: var(--font-ui);
+  font-weight: 700;
   flex: 1;
 }
 .actions {
@@ -499,8 +500,8 @@ watch(
   flex-shrink: 0;
 }
 .actions .danger {
-  color: #e5534b;
-  border-color: #e5534b;
+  background: var(--danger-bg);
+  color: var(--danger-text);
 }
 .rename-form {
   display: flex;
@@ -512,18 +513,19 @@ watch(
   max-width: 24rem;
 }
 .hint {
-  font-size: 0.9rem;
-  opacity: 0.7;
+  font-size: 0.88rem;
+  color: var(--text-dim);
 }
 .hint-inline {
-  font-size: 0.85rem;
-  opacity: 0.7;
+  font-size: 0.82rem;
+  color: var(--text-faint);
 }
 .history-panel {
-  border: 1px solid #333;
-  border-radius: 8px;
-  padding: 0.75rem;
-  margin-top: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.85rem;
+  margin-top: 0.85rem;
+  background: var(--surface);
 }
 .history-panel ul {
   margin: 0;
@@ -533,14 +535,18 @@ watch(
 .link-btn {
   background: none;
   border: none;
-  color: #4a9eff;
+  color: var(--accent);
   cursor: pointer;
   padding: 0.2rem 0;
-  font-size: 0.9rem;
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+.link-btn:hover {
+  color: var(--accent-hover);
 }
 .revision-preview {
   margin-top: 0.5rem;
-  border-top: 1px solid #333;
+  border-top: 1px solid var(--border);
   padding-top: 0.5rem;
 }
 .tiptap,
@@ -549,14 +555,15 @@ watch(
   border-radius: 6px;
   padding: 0.5rem 0;
   min-height: 4rem;
-  line-height: 1.5;
+  line-height: 1.6;
 }
 .tiptap.editable :deep(.ProseMirror) {
-  border: 1px solid #333;
-  border-radius: 0 0 6px 6px;
-  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 0 0 10px 10px;
+  padding: 0.9rem 1rem;
   min-height: 12rem;
   outline: none;
+  background: var(--surface);
 }
 /* The Placeholder extension only marks the empty paragraph with a
    data-placeholder attribute and an is-editor-empty class — it ships no
@@ -566,8 +573,7 @@ watch(
   content: attr(data-placeholder);
   float: left;
   height: 0;
-  color: #888;
-  opacity: 0.8;
+  color: var(--text-faint);
   pointer-events: none;
 }
 /* ProseMirror's table/image nodes render as plain unstyled <table>/<img> —
@@ -576,7 +582,7 @@ watch(
 .tiptap :deep(img),
 .tiptap-view :deep(img) {
   max-width: 100%;
-  border-radius: 4px;
+  border-radius: 6px;
 }
 .tiptap :deep(table),
 .tiptap-view :deep(table) {
@@ -588,19 +594,19 @@ watch(
 .tiptap :deep(th),
 .tiptap-view :deep(td),
 .tiptap-view :deep(th) {
-  border: 1px solid #333;
-  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--border);
+  padding: 0.4rem 0.6rem;
   text-align: left;
 }
 .tiptap :deep(th),
 .tiptap-view :deep(th) {
-  background: rgba(255, 255, 255, 0.08);
-  font-weight: bold;
+  background: var(--code-bg);
+  font-weight: 700;
 }
 .attachments {
-  margin-top: 2rem;
-  border-top: 1px solid #333;
-  padding-top: 1rem;
+  margin-top: 2.5rem;
+  border-top: 1px solid var(--border);
+  padding-top: 1.1rem;
 }
 .attachments h2 {
   font-size: 1rem;

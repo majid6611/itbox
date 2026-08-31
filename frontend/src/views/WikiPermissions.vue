@@ -71,9 +71,9 @@ async function save() {
             <option value="read">Read</option>
             <option value="write">Read &amp; write</option>
           </select>
-          <button @click="removeRule(i)">Remove</button>
+          <button class="secondary" @click="removeRule(i)">Remove</button>
         </div>
-        <button @click="addRule">+ Add group rule</button>
+        <button class="secondary" @click="addRule">+ Add group rule</button>
         <div class="save-row">
           <button :disabled="saving" @click="save">{{ saving ? 'Saving…' : 'Save' }}</button>
           <span v-if="saved" class="saved">Saved.</span>
@@ -84,11 +84,15 @@ async function save() {
 </template>
 
 <style scoped>
+h1 {
+  margin-bottom: 0.75rem;
+}
 .hint {
   font-size: 0.9rem;
-  opacity: 0.8;
+  color: var(--text-dim);
   max-width: 40rem;
-  margin-bottom: 1rem;
+  margin-bottom: 1.5rem;
+  line-height: 1.55;
 }
 .layout {
   display: flex;
@@ -106,17 +110,20 @@ async function save() {
   text-align: left;
   background: none;
   border: none;
-  padding: 0.35rem 0.5rem;
+  padding: 0.4rem 0.6rem;
   cursor: pointer;
-  color: inherit;
-  border-radius: 4px;
+  color: var(--text);
+  font-weight: 400;
+  border-radius: 6px;
+  font-size: 0.88rem;
 }
 .page-list button:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--surface-hover);
 }
 .page-list button.active {
-  background: rgba(255, 255, 255, 0.08);
-  font-weight: bold;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
 }
 .rules-panel {
   flex: 1;
@@ -138,7 +145,8 @@ async function save() {
   margin-top: 1rem;
 }
 .saved {
-  color: #1a7f37;
+  color: var(--success-text);
   font-size: 0.85rem;
+  font-weight: 600;
 }
 </style>

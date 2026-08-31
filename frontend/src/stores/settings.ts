@@ -1,10 +1,12 @@
 import { defineStore } from 'pinia'
 import { api } from '../api/client'
-import type { SettingsResponse } from '../api/types'
+import type { SettingsResponse, ThemeName } from '../api/types'
+import { useThemeStore } from './theme'
 
 export const useSettingsStore = defineStore('settings', {
   state: () => ({
     baseDomain: '',
+    theme: 'slate' as ThemeName,
     loading: false,
   }),
   actions: {
@@ -13,13 +15,17 @@ export const useSettingsStore = defineStore('settings', {
       try {
         const res = await api.get<SettingsResponse>('/settings')
         this.baseDomain = res.base_domain
+        this.theme = res.theme
       } finally {
         this.loading = false
       }
     },
-    async save(baseDomain: string) {
-      const res = await api.post<SettingsResponse>('/settings', { base_domain: baseDomain })
+    async save(baseDomain: string, theme: ThemeName) {
+      const res = await api.post<SettingsResponse>('/settings', { base_domain: baseDomain, theme })
       this.baseDomain = res.base_domain
+      this.theme = res.theme
+      // Applies to this tab immediately — no reload needed to see your own change.
+      useThemeStore().apply(res.theme)
     },
   },
 })

@@ -73,19 +73,19 @@ function formatTime(iso: string) {
     </p>
 
     <div class="status-row">
-      <span v-if="!lastBackup" class="badge stopped">No backups yet</span>
-      <span v-else :class="['badge', lastBackup.status]">
+      <span v-if="!lastBackup" class="pill pill-neutral">No backups yet</span>
+      <span v-else class="pill" :class="lastBackup.status === 'success' ? 'pill-good' : lastBackup.status === 'error' ? 'pill-bad' : 'pill-warn'">
         {{ lastBackup.status === 'running' ? 'Backing up…' : lastBackup.status === 'success' ? 'Last backup succeeded' : 'Last backup failed' }}
       </span>
       <span v-if="lastBackup" class="hint-inline">{{ formatTime(lastBackup.started_at) }}</span>
       <button :disabled="busy" @click="runNow">{{ busy ? 'Working…' : 'Back up now' }}</button>
-      <button :disabled="busy" @click="restoreNow">Restore from backup</button>
+      <button class="secondary" :disabled="busy" @click="restoreNow">Restore from backup</button>
     </div>
     <p v-if="lastBackup?.status === 'error' && lastBackup.error_message" class="error-message">
       {{ lastBackup.error_message }}
     </p>
 
-    <form @submit.prevent="save" class="config-form">
+    <form @submit.prevent="save" class="config-form card">
       <h2>Destination</h2>
       <label class="radio">
         <input type="radio" v-model="form.destination" value="local" />
@@ -142,7 +142,7 @@ function formatTime(iso: string) {
         <tr v-for="r in backup.runs" :key="r.started_at + r.kind">
           <td>{{ formatTime(r.started_at) }}</td>
           <td>{{ r.kind === 'backup' ? 'Backup' : 'Restore' }}</td>
-          <td><span :class="['badge', r.status]">{{ r.status }}</span></td>
+          <td><span class="pill" :class="r.status === 'success' ? 'pill-good' : r.status === 'error' ? 'pill-bad' : 'pill-warn'">{{ r.status }}</span></td>
           <td>{{ r.error_message || '—' }}</td>
         </tr>
       </tbody>
@@ -152,24 +152,32 @@ function formatTime(iso: string) {
 </template>
 
 <style scoped>
+h1 {
+  margin-bottom: 0.75rem;
+}
+h2 {
+  margin-top: 2rem;
+}
 .hint {
   font-size: 0.9rem;
-  opacity: 0.8;
+  color: var(--text-dim);
   max-width: 40rem;
   margin-bottom: 1rem;
+  line-height: 1.55;
 }
 .hint-inline {
   font-size: 0.85rem;
-  opacity: 0.7;
+  color: var(--text-faint);
 }
 .status-row {
   display: flex;
   align-items: center;
   gap: 0.75rem;
   margin-bottom: 1rem;
+  flex-wrap: wrap;
 }
 .error-message {
-  color: #e5534b;
+  color: var(--danger-text);
   font-size: 0.9rem;
   max-width: 40rem;
 }
@@ -178,63 +186,52 @@ function formatTime(iso: string) {
   flex-direction: column;
   gap: 0.5rem;
   max-width: 28rem;
-  border: 1px solid #333;
-  border-radius: 8px;
-  padding: 1rem;
+  padding: 1.1rem;
   margin-bottom: 1.5rem;
 }
 .config-form h2 {
-  font-size: 1rem;
+  font-size: 0.95rem;
   margin: 0.5rem 0 0;
 }
 .config-form label {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
-  font-size: 0.9rem;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+  font-weight: 500;
 }
 .config-form label.radio {
   flex-direction: row;
   align-items: center;
   gap: 0.5rem;
+  font-weight: 400;
 }
 .config-form button {
   align-self: flex-start;
   margin-top: 0.25rem;
 }
 .saved {
-  color: #1a7f37;
+  color: var(--success-text);
   font-size: 0.85rem;
+  font-weight: 600;
 }
 .users-table {
   border-collapse: collapse;
   width: 100%;
 }
-.users-table th,
+.users-table th {
+  text-align: left;
+  padding: 0.6rem 0.7rem;
+  font-family: var(--font-ui);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-faint);
+  border-bottom: 1px solid var(--border);
+}
 .users-table td {
   text-align: left;
-  padding: 0.5rem;
-  border-bottom: 1px solid #333;
-}
-.badge {
-  padding: 0.15rem 0.5rem;
-  border-radius: 4px;
-  font-size: 0.85rem;
-}
-.badge.success {
-  background: #1a7f37;
-  color: white;
-}
-.badge.error {
-  background: #e5534b;
-  color: white;
-}
-.badge.running {
-  background: #b08800;
-  color: white;
-}
-.badge.stopped {
-  background: #555;
-  color: white;
+  padding: 0.6rem 0.7rem;
+  border-bottom: 1px solid var(--border);
 }
 </style>

@@ -40,22 +40,28 @@ li {
 }
 .folder {
   display: block;
-  padding: 0.2rem 0;
-  font-size: 0.85rem;
-  opacity: 0.7;
+  padding: 0.3rem 0.4rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
 }
 a {
   display: block;
-  padding: 0.2rem 0;
-  font-size: 0.9rem;
+  padding: 0.3rem 0.4rem;
+  border-radius: 6px;
+  font-size: 0.88rem;
   text-decoration: none;
-  color: inherit;
+  color: var(--text-dim);
 }
 a:hover {
-  text-decoration: underline;
+  background: var(--surface-hover);
+  color: var(--text);
 }
 a.active {
-  font-weight: bold;
-  color: #4a9eff;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-soft);
 }
 </style>

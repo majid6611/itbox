@@ -205,7 +205,7 @@ async function removeGroup(name: string, memberCount: number) {
               <td></td>
               <td class="row-actions">
                 <button :disabled="busy[u.username]" @click="saveEdit(u.username)">Save</button>
-                <button :disabled="busy[u.username]" @click="cancelEdit(u.username)">Cancel</button>
+                <button class="secondary" :disabled="busy[u.username]" @click="cancelEdit(u.username)">Cancel</button>
               </td>
             </template>
             <template v-else>
@@ -217,14 +217,14 @@ async function removeGroup(name: string, memberCount: number) {
                 </select>
               </td>
               <td>
-                <span :class="['badge', u.disabled ? 'stopped' : 'running']">{{ u.disabled ? 'disabled' : 'active' }}</span>
+                <span class="pill" :class="u.disabled ? 'pill-neutral' : 'pill-good'">{{ u.disabled ? 'disabled' : 'active' }}</span>
               </td>
               <td class="row-actions">
-                <button :disabled="busy[u.username]" @click="startEdit(u)">Edit</button>
-                <button :disabled="busy[u.username]" @click="resetPassword(u.username)">Reset password</button>
+                <button class="secondary" :disabled="busy[u.username]" @click="startEdit(u)">Edit</button>
+                <button class="secondary" :disabled="busy[u.username]" @click="resetPassword(u.username)">Reset password</button>
                 <button v-if="u.disabled" :disabled="busy[u.username]" @click="enable(u.username)">Enable</button>
-                <button v-else :disabled="busy[u.username]" @click="disable(u.username)">Disable</button>
-                <button :disabled="busy[u.username]" @click="remove(u.username)">Remove</button>
+                <button v-else class="secondary" :disabled="busy[u.username]" @click="disable(u.username)">Disable</button>
+                <button class="secondary" :disabled="busy[u.username]" @click="remove(u.username)">Remove</button>
               </td>
             </template>
           </tr>
@@ -253,7 +253,7 @@ async function removeGroup(name: string, memberCount: number) {
             <td>{{ g.name }}</td>
             <td>{{ g.members.length ? g.members.join(', ') : '—' }}</td>
             <td>
-              <button :disabled="busy['group:' + g.name]" @click="removeGroup(g.name, g.members.length)">Delete</button>
+              <button class="secondary" :disabled="busy['group:' + g.name]" @click="removeGroup(g.name, g.members.length)">Delete</button>
             </td>
           </tr>
         </tbody>
@@ -263,44 +263,55 @@ async function removeGroup(name: string, memberCount: number) {
 </template>
 
 <style scoped>
+h1 {
+  margin-bottom: 1.5rem;
+}
+h2 {
+  margin-top: 2.5rem;
+}
 .notice {
-  border: 1px solid #333;
-  border-radius: 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
   padding: 1rem;
   max-width: 32rem;
   margin-bottom: 1rem;
+  color: var(--text-dim);
+  font-size: 0.9rem;
+  background: var(--surface);
 }
 .revealed {
-  border: 1px solid #1a7f37;
-  border-radius: 8px;
+  border: 1px solid var(--success-text);
+  background: var(--success-bg);
+  border-radius: 10px;
   padding: 0.75rem 1rem;
   margin-bottom: 1rem;
   display: flex;
   align-items: center;
   gap: 0.75rem;
   flex-wrap: wrap;
+  color: var(--success-text);
+  font-size: 0.9rem;
 }
 .revealed code {
-  font-family: monospace;
-  background: rgba(255, 255, 255, 0.08);
-  padding: 0.1rem 0.4rem;
-  border-radius: 4px;
+  color: var(--text);
 }
 .create-form {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.75rem;
+  gap: 0.85rem;
   align-items: flex-end;
   margin-bottom: 1.5rem;
-  border: 1px solid #333;
-  border-radius: 8px;
-  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1.1rem;
+  background: var(--surface);
 }
 .create-form label {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
-  font-size: 0.9rem;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+  font-weight: 500;
 }
 .secret-field {
   display: flex;
@@ -308,41 +319,38 @@ async function removeGroup(name: string, memberCount: number) {
 }
 .secret-field input {
   flex: 1;
-  font-family: monospace;
+  font-family: var(--font-mono);
 }
 .users-table {
   border-collapse: collapse;
   width: 100%;
   margin-bottom: 2rem;
 }
-.users-table th,
+.users-table th {
+  text-align: left;
+  padding: 0.6rem 0.7rem;
+  font-family: var(--font-ui);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-faint);
+  border-bottom: 1px solid var(--border);
+}
 .users-table td {
   text-align: left;
-  padding: 0.5rem;
-  border-bottom: 1px solid #333;
+  padding: 0.6rem 0.7rem;
+  border-bottom: 1px solid var(--border);
 }
 .row-actions {
   display: flex;
   gap: 0.4rem;
+  flex-wrap: wrap;
 }
 .hint {
-  font-size: 0.8rem;
-  opacity: 0.7;
+  font-size: 0.78rem;
+  color: var(--text-faint);
 }
 .users-table tr.disabled {
-  opacity: 0.6;
-}
-.badge {
-  padding: 0.15rem 0.5rem;
-  border-radius: 4px;
-  font-size: 0.85rem;
-}
-.badge.running {
-  background: #1a7f37;
-  color: white;
-}
-.badge.stopped {
-  background: #b08800;
-  color: white;
+  opacity: 0.55;
 }
 </style>
