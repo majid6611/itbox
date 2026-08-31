@@ -250,13 +250,14 @@ func (m *Manager) GetInstalled(ctx context.Context, moduleID string) (Status, bo
 // specific secondary thing a module's primary service depends on being
 // reachable (not a thing end users browse to directly), so it always
 // stays public.
-func (m *Manager) routeTargets(ctx context.Context, moduleID string, routes []Route) ([]proxy.RouteTarget, error) {
+func (m *Manager) routeTargets(ctx context.Context, moduleID string, routes []Route, needsTLS bool) ([]proxy.RouteTarget, error) {
 	targets := make([]proxy.RouteTarget, 0, len(routes))
 	for _, r := range routes {
 		t := proxy.RouteTarget{
 			Name:     r.Name,
 			Hostname: m.Hostname(moduleID, r.Name),
 			Upstream: m.upstream(moduleID, r),
+			TLS:      needsTLS,
 		}
 		if r.Name == "" {
 			visibility, err := m.Visibility(ctx, moduleID)
@@ -324,7 +325,7 @@ func (m *Manager) SetVisibility(ctx context.Context, moduleID, visibility string
 	if len(manifest.Routes) == 0 {
 		return nil
 	}
-	targets, err := m.routeTargets(ctx, moduleID, manifest.Routes)
+	targets, err := m.routeTargets(ctx, moduleID, manifest.Routes, manifest.NeedsTLS)
 	if err != nil {
 		return err
 	}
@@ -481,7 +482,7 @@ func (m *Manager) doInstall(ctx context.Context, moduleID string, manifest *Mani
 	}
 
 	if len(manifest.Routes) > 0 {
-		targets, err := m.routeTargets(ctx, moduleID, manifest.Routes)
+		targets, err := m.routeTargets(ctx, moduleID, manifest.Routes, manifest.NeedsTLS)
 		if err != nil {
 			return fmt.Errorf("route module: %w", err)
 		}
@@ -563,7 +564,7 @@ func (m *Manager) Enable(_ context.Context, moduleID string) error {
 	}
 
 	if len(manifest.Routes) > 0 {
-		targets, err := m.routeTargets(ctx, moduleID, manifest.Routes)
+		targets, err := m.routeTargets(ctx, moduleID, manifest.Routes, manifest.NeedsTLS)
 		if err != nil {
 			return fmt.Errorf("route module: %w", err)
 		}

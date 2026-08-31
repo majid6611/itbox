@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { usePortalStore } from '../../stores/portal'
+import { usePortalModulesStore } from '../../stores/portalModules'
 import { useChatStore, type TargetKind } from '../../stores/chat'
 
 const portal = usePortalStore()
+const portalModules = usePortalModulesStore()
 const chat = useChatStore()
 
 const active = ref<{ kind: TargetKind; name: string | number } | null>(null)
@@ -61,6 +63,35 @@ const notifPermission = ref<NotificationPermission>('Notification' in window ? N
 async function enableNotifications() {
   await chat.requestNotificationPermission()
   notifPermission.value = Notification.permission
+}
+
+// A call is just a room link — video-jitsi needs no accounts and no
+// directory integration, so "starting a call" is nothing more than
+// picking an unguessable room id and sharing the URL, the same way
+// sharing any other link into the thread already works. Whoever starts it
+// also gets it opened for them immediately, so they're not stuck clicking
+// their own just-sent message to join.
+function randomRoomId() {
+  const bytes = new Uint8Array(8)
+  crypto.getRandomValues(bytes)
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
+}
+async function startCall() {
+  if (!active.value || !portalModules.videoCallBaseURL) return
+  const url = `${portalModules.videoCallBaseURL}/${randomRoomId()}`
+  await chat.sendMessage(active.value.kind, active.value.name, url)
+  window.open(url, '_blank', 'noopener')
+}
+
+// A message that's nothing but a URL renders as a real link instead of
+// inert text — covers a shared video-call room link and any other pasted
+// link the same way. The href only ever comes from our own stored/scheme-
+// checked message content, never bound from anything unvalidated.
+function isPlainUrl(content: string): boolean {
+  return /^https?:\/\/\S+$/.test(content.trim())
+}
+function isVideoCallLink(content: string): boolean {
+  return !!portalModules.videoCallBaseURL && content.trim().startsWith(portalModules.videoCallBaseURL + '/')
 }
 
 const showNewGroup = ref(false)
@@ -247,6 +278,7 @@ onMounted(async () => {
               <span class="hint-inline">{{ activeGroup?.members.join(', ') }}</span>
               <button @click="showAddMember = !showAddMember">+ Add person</button>
             </div>
+            <button v-if="portalModules.videoCallBaseURL" class="secondary" @click="startCall">📹 Start call</button>
             <button v-if="notifPermission === 'default'" class="notif-btn" @click="enableNotifications">🔔 Enable notifications</button>
             <span v-else-if="notifPermission === 'denied'" class="hint-inline">Notifications blocked in browser settings</span>
           </div>
@@ -278,7 +310,15 @@ onMounted(async () => {
               </form>
             </template>
             <template v-else>
-              <p v-if="m.content">{{ m.content }}</p>
+              <a
+                v-if="m.content && isPlainUrl(m.content)"
+                :href="m.content.trim()"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="attachment-link"
+                :class="{ 'call-link': isVideoCallLink(m.content) }"
+              >{{ isVideoCallLink(m.content) ? '📹 Join video call' : m.content.trim() }}</a>
+              <p v-else-if="m.content">{{ m.content }}</p>
               <a v-if="m.attachment" :href="`/api/portal/chat/attachments/${m.attachment.id}`" target="_blank" rel="noopener" class="attachment-link">
                 📎 {{ m.attachment.filename }} ({{ Math.ceil(m.attachment.size_bytes / 1024) }} KB)
               </a>
@@ -531,6 +571,14 @@ onMounted(async () => {
 }
 .message.mine .attachment-link {
   background: var(--accent-soft);
+  color: var(--accent);
+}
+.attachment-link.call-link {
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+.message.mine .attachment-link.call-link {
+  background: var(--accent-contrast);
   color: var(--accent);
 }
 .emoji-picker {

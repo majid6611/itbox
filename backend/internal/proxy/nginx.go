@@ -51,6 +51,10 @@ type RouteTarget struct {
 	Hostname    string
 	Upstream    string
 	PrivatePort int
+	// TLS means this route needs a real HTTPS/WSS listener (self-signed
+	// cert) rather than the usual plain-HTTP vhost — see
+	// modules.Manifest.NeedsTLS for why a module would set this.
+	TLS bool
 }
 
 func (m *Manager) confPath(moduleID, routeName string) string {
@@ -83,6 +87,12 @@ func (m *Manager) pathRouteConfPath(moduleID string) string {
 // setting, not per-vhost, so it can't share this shared port-80 socket
 // with every other module's plain vhost; it gets a direct host port
 // instead — see modules/vpn-netbird/docker-compose.yaml).
+//
+// WebSocket upgrade support (same $connection_upgrade map used by
+// SetPathRoutes, defined once at the http{} level — see
+// nginx/templates/upgrade-map.conf.template) is included unconditionally
+// here too: harmless for a plain-REST module, load-bearing for video-jitsi,
+// whose web frontend signals over a WebSocket to its XMPP server.
 func (m *Manager) SetRoutes(ctx context.Context, moduleID string, routes []RouteTarget) error {
 	for _, r := range routes {
 		var conf string
@@ -104,9 +114,61 @@ func (m *Manager) SetRoutes(ctx context.Context, moduleID string, routes []Route
         proxy_set_header Host $http_host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
     }
 }
 `, internalGatewayIP, r.PrivatePort, r.Upstream)
+		} else if r.TLS {
+			if _, _, err := m.ensureSelfSignedCert(moduleID, r.Hostname); err != nil {
+				return fmt.Errorf("ensure tls cert for %s/%s: %w", moduleID, r.Name, err)
+			}
+			// Deliberately not the paths ensureSelfSignedCert just returned
+			// — those are m.confDir-relative, correct for *this* container's
+			// own bind mount (NGINX_CONF_DIR) but not for the nginx
+			// container's, which mounts the same host directory at the
+			// fixed /etc/nginx/conf.d instead (see docker-compose.yaml).
+			// This is the path the directive below actually needs to
+			// resolve inside the container that reads it.
+			certPath := fmt.Sprintf("/etc/nginx/conf.d/tls/%s/cert.pem", moduleID)
+			keyPath := fmt.Sprintf("/etc/nginx/conf.d/tls/%s/key.pem", moduleID)
+			// Plain :80 redirects rather than proxying — a module that
+			// needs TLS (see RouteTarget.TLS) needs it for everything, not
+			// just the connections that happen to ask for it, since e.g.
+			// video-jitsi's own JS assumes every request already got the
+			// same origin's real scheme.
+			conf = fmt.Sprintf(`server {
+    listen 80;
+    server_name %[1]s;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    server_name %[1]s;
+    ssl_certificate %[3]s;
+    ssl_certificate_key %[4]s;
+
+    resolver 127.0.0.11 valid=10s;
+
+    location / {
+        set $upstream "http://%[2]s";
+        proxy_pass $upstream;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+    }
+}
+`, r.Hostname, r.Upstream, certPath, keyPath)
 		} else {
 			// The upstream is resolved lazily via a variable + Docker's embedded
 			// DNS (127.0.0.11), not baked into a literal proxy_pass hostname. A
@@ -132,6 +194,11 @@ func (m *Manager) SetRoutes(ctx context.Context, moduleID string, routes []Route
         proxy_set_header Host $http_host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
     }
 }
 `, r.Hostname, r.Upstream)
@@ -150,6 +217,14 @@ func (m *Manager) SetRoutes(ctx context.Context, moduleID string, routes []Route
 // RemoveRoutes deletes all of a module's vhosts, if any, and reloads
 // nginx. Safe to call for modules that were never routed.
 func (m *Manager) RemoveRoutes(ctx context.Context, moduleID string) error {
+	// Unconditional and separate from the vhost-file check below — a
+	// module can have had NeedsTLS at some point without necessarily
+	// having a vhost file right now (e.g. disabled), and removing an
+	// already-absent directory is a harmless no-op either way.
+	if err := os.RemoveAll(m.tlsDir(moduleID)); err != nil {
+		return fmt.Errorf("remove tls cert dir for %s: %w", moduleID, err)
+	}
+
 	matches, err := filepath.Glob(filepath.Join(m.confDir, moduleID+"__*.conf"))
 	if err != nil {
 		return fmt.Errorf("list nginx vhosts for %s: %w", moduleID, err)

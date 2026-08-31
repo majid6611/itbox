@@ -1,0 +1,42 @@
+id: video-jitsi
+name: Video Calls
+description: >-
+  Self-hosted video calling (Jitsi Meet). No accounts and no directory
+  integration — a room is just an unguessable link, and anyone who has it
+  can join. Chat gets a "Start call" button that drops a fresh room link
+  straight into the conversation, the same way sharing any other link
+  already works there.
+category: collaboration
+version: "1.0.0"
+compose_file: docker-compose.yaml
+# Jitsi's web frontend hardcodes wss:// for call signaling with no plain
+# HTTP fallback — confirmed by reading its own config template — so this
+# is the one module in the catalog that needs this. See NeedsTLS's own
+# doc comment in modules/manifest.go for what it actually gets you (a
+# self-signed cert, not a real one).
+needs_tls: true
+routes:
+  # The image's internal nginx listens on plain 80 (and 443 with a
+  # self-signed cert we don't use) unless HTTP_PORT/HTTPS_PORT are passed
+  # through as container env vars — upstream's own docker-compose.yml only
+  # looks like it uses 8000 because that's the *host*-side port in its
+  # ports: mapping (${HTTP_PORT}:8000); we don't publish to the host at
+  # all, we reach it over the edge Docker network directly, so the actual
+  # container-internal listen port (confirmed by inspecting a running
+  # container) is what matters here.
+  - service: web
+    port: 80
+config_schema:
+  # Both secret and hidden: generated once at install, never shown or
+  # asked for — these are internal passwords the video bridge and
+  # conference-focus components use to authenticate to the XMPP server
+  # (prosody), not anything an admin or employee ever needs to see.
+  - key: jicofo_auth_password
+    label: Jicofo auth password
+    type: secret
+    hidden: true
+  - key: jvb_auth_password
+    label: Video bridge auth password
+    type: secret
+    hidden: true
+soft_dependencies: []
