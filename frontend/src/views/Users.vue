@@ -133,6 +133,7 @@ async function removeGroup(name: string, memberCount: number) {
 <template>
   <div>
     <h1>Users</h1>
+    <p class="subtitle">Company accounts and the groups they belong to.</p>
 
     <div v-if="revealed" class="revealed">
       Password for <strong>{{ revealed.username }}</strong>: <code>{{ revealed.password }}</code>
@@ -264,7 +265,12 @@ async function removeGroup(name: string, memberCount: number) {
 
 <style scoped>
 h1 {
-  margin-bottom: 1.5rem;
+  margin-bottom: 0.35rem;
+}
+.subtitle {
+  color: var(--text-dim);
+  font-size: 0.92rem;
+  margin: 0 0 1.75rem;
 }
 h2 {
   margin-top: 2.5rem;

@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { ApiError } from '../api/client'
+import Icon from '../components/Icon.vue'
 
 const auth = useAuthStore()
 const router = useRouter()
@@ -29,6 +30,7 @@ async function handleSubmit() {
 <template>
   <div class="login">
     <form class="card" @submit.prevent="handleSubmit">
+      <div class="mark"><Icon name="mark" :size="22" /></div>
       <h1>IT Platform</h1>
       <p class="subtitle">Admin sign-in</p>
       <label>
@@ -50,13 +52,29 @@ async function handleSubmit() {
   display: flex;
   justify-content: center;
   margin-top: 4.5rem;
+  min-height: calc(100vh - 8.5rem);
+  background:
+    radial-gradient(circle at 15% 0%, var(--accent-soft), transparent 45%),
+    radial-gradient(circle at 100% 30%, var(--accent-soft), transparent 40%);
 }
 form {
   display: flex;
   flex-direction: column;
   gap: 0.85rem;
   width: 320px;
-  padding: 2rem 1.85rem;
+  height: fit-content;
+  padding: 2.25rem 1.85rem;
+}
+.mark {
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 10px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 0.4rem;
 }
 h1 {
   font-size: 1.3rem;
