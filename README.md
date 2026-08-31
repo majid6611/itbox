@@ -86,7 +86,7 @@ label-discovery proxy, it doesn't know about modules on its own — the
    `api.s3-storage.${BASE_DOMAIN}`). Modules with no web UI declare none.
 2. Every routed service still needs to be reachable over the network —
    attach it to the external `it-platform-edge` network (see
-   `modules/hello-world/docker-compose.yaml`).
+   `modules/s3-storage/docker-compose.yaml`).
 3. On install/enable, the backend (`internal/proxy`) writes one small
    nginx server block per route into a conf.d directory shared
    (bind-mounted) with the nginx container, pointing at the module's
@@ -112,12 +112,12 @@ Modules currently in the catalog:
 
 | id | status |
 |---|---|
-| `hello-world` | implemented — proof of concept for the install pipeline |
 | `s3-storage` | implemented — S3-compatible object storage (Garage + web console) |
 | `fileshare-webdav` | implemented — network file share (WebDAV), mounts as a drive in Explorer/Finder |
 | `ldap-openldap` | implemented — company directory (OpenLDAP), managed from our own Users panel |
-| `vpn-netbird` | stub — self-hosted WireGuard mesh VPN (Netbird) |
-| `google-drive` | stub — two-way Google Drive sync (rclone) |
+| `vpn-netbird` | implemented — self-hosted WireGuard mesh VPN (Netbird) |
+| `wiki` | implemented — feature module, employee wiki with revision history and per-page permissions |
+| `chat` | implemented — feature module, live group/DM chat with file sharing and presence |
 | `mesh-wol` | stub — compute power management (Wake-on-LAN), planned for later |
 
 **Why Garage, not MinIO:** MinIO was the original pick, but its
