@@ -81,6 +81,7 @@ async function run(id: string, action: 'enable' | 'disable' | 'uninstall') {
 <template>
   <div>
     <h1>Module Store</h1>
+    <p class="subtitle">Install, configure, and manage the services running on this deployment.</p>
     <div class="grid">
       <div v-for="m in modules.catalog" :key="m.id" class="card">
         <h2>{{ m.name }}</h2>
@@ -152,7 +153,12 @@ async function run(id: string, action: 'enable' | 'disable' | 'uninstall') {
 
 <style scoped>
 h1 {
-  margin-bottom: 1.5rem;
+  margin-bottom: 0.35rem;
+}
+.subtitle {
+  color: var(--text-dim);
+  font-size: 0.92rem;
+  margin: 0 0 1.75rem;
 }
 .grid {
   display: grid;

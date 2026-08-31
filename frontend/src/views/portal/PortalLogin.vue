@@ -3,6 +3,7 @@ import { reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { usePortalStore } from '../../stores/portal'
 import { ApiError } from '../../api/client'
+import Icon from '../../components/Icon.vue'
 
 const portal = usePortalStore()
 const router = useRouter()
@@ -27,6 +28,7 @@ async function submit() {
 <template>
   <div class="login-wrap">
     <form class="login-box card" @submit.prevent="submit">
+      <div class="mark"><Icon name="mark" :size="22" /></div>
       <h1>Employee Portal</h1>
       <p class="hint">Log in with your company username and password.</p>
       <label>
@@ -48,13 +50,29 @@ async function submit() {
   display: flex;
   justify-content: center;
   padding-top: 4rem;
+  min-height: calc(100vh - 8.5rem);
+  background:
+    radial-gradient(circle at 15% 0%, var(--accent-soft), transparent 45%),
+    radial-gradient(circle at 100% 30%, var(--accent-soft), transparent 40%);
 }
 .login-box {
   display: flex;
   flex-direction: column;
   gap: 0.85rem;
   width: 20rem;
-  padding: 2rem 1.85rem;
+  height: fit-content;
+  padding: 2.25rem 1.85rem;
+}
+.mark {
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 10px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 0.4rem;
 }
 .login-box h1 {
   font-size: 1.3rem;

@@ -5,6 +5,7 @@ import { usePortalStore } from './stores/portal'
 import { usePortalModulesStore } from './stores/portalModules'
 import { useChatStore } from './stores/chat'
 import { useRoute, useRouter } from 'vue-router'
+import Icon from './components/Icon.vue'
 
 const auth = useAuthStore()
 const portal = usePortalStore()
@@ -55,27 +56,37 @@ async function handlePortalLogout() {
 <template>
   <div class="app-shell">
     <header v-if="inPortal && portal.username" class="topbar">
+      <div class="brand">
+        <Icon name="mark" :size="20" />
+        <span>IT Platform</span>
+      </div>
       <nav>
-        <router-link v-if="portalModules.modules.wiki" :to="{ name: 'portal-wiki', params: { pathMatch: [] } }">Wiki</router-link>
+        <router-link v-if="portalModules.modules.wiki" :to="{ name: 'portal-wiki', params: { pathMatch: [] } }">
+          <Icon name="wiki" :size="16" /> Wiki
+        </router-link>
         <router-link v-if="portalModules.modules.chat" :to="{ name: 'portal-chat' }" class="nav-link-with-badge">
-          Chat
+          <Icon name="chat" :size="16" /> Chat
           <span v-if="chat.hasUnread" class="nav-badge" aria-label="Unread messages"></span>
         </router-link>
       </nav>
       <div class="account">
         <span>{{ portal.username }}</span>
-        <button @click="handlePortalLogout">Log out</button>
+        <button class="secondary" @click="handlePortalLogout"><Icon name="logout" :size="15" /> Log out</button>
       </div>
     </header>
     <header v-else-if="!inPortal && auth.email" class="topbar admin">
+      <div class="brand">
+        <Icon name="mark" :size="20" />
+        <span>IT Platform</span>
+      </div>
       <nav>
-        <router-link to="/">Dashboard</router-link>
-        <router-link to="/modules">Module Store</router-link>
-        <router-link to="/settings">Settings</router-link>
+        <router-link to="/"><Icon name="dashboard" :size="16" /> Dashboard</router-link>
+        <router-link to="/modules"><Icon name="modules" :size="16" /> Module Store</router-link>
+        <router-link to="/settings"><Icon name="settings" :size="16" /> Settings</router-link>
       </nav>
       <div class="account">
         <span>{{ auth.email }}</span>
-        <button class="secondary" @click="handleLogout">Log out</button>
+        <button class="secondary" @click="handleLogout"><Icon name="logout" :size="15" /> Log out</button>
       </div>
     </header>
     <main :class="{ admin: !inPortal && auth.email }">
@@ -87,9 +98,9 @@ async function handlePortalLogout() {
 <style scoped>
 .topbar {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  padding: 0.85rem 1.75rem;
+  gap: 2.5rem;
+  padding: 0.75rem 1.75rem;
   font-family: var(--font-ui);
   font-size: 0.9rem;
 }
@@ -97,17 +108,43 @@ async function handlePortalLogout() {
   background: var(--surface);
   border-bottom: 1px solid var(--border);
 }
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--text);
+}
+.topbar.admin .brand {
+  color: var(--admin-nav-text);
+}
+.brand .icon {
+  color: var(--accent);
+}
 .topbar nav {
   display: flex;
   align-items: center;
-  gap: 1.5rem;
+  gap: 0.35rem;
+  flex: 1;
+}
+.topbar nav a {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
 }
 .topbar:not(.admin) nav a {
   color: var(--text-dim);
   font-weight: 500;
+  padding: 0.4rem 0.7rem;
+  border-radius: 7px;
+}
+.topbar:not(.admin) nav a:hover {
+  background: var(--surface-hover);
 }
 .topbar:not(.admin) nav a.router-link-active {
   color: var(--accent);
+  background: var(--accent-soft);
 }
 .nav-link-with-badge {
   position: relative;
@@ -148,11 +185,27 @@ async function handlePortalLogout() {
   color: var(--admin-nav-text-dim);
   font-size: 0.85rem;
 }
+.topbar.admin .account .secondary {
+  background: transparent;
+  color: var(--admin-nav-text-dim);
+  border-color: var(--admin-nav-active-bg);
+}
+.topbar.admin .account .secondary:hover {
+  background: var(--admin-nav-active-bg);
+  color: var(--admin-nav-text);
+}
 
 .account {
   display: flex;
   align-items: center;
   gap: 0.75rem;
+}
+.account button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.82rem;
+  padding: 0.4rem 0.75rem;
 }
 main {
   padding: 2rem 1.75rem;
