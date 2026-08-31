@@ -9,6 +9,7 @@ import Vpn from '../views/Vpn.vue'
 import Settings from '../views/Settings.vue'
 import Backup from '../views/Backup.vue'
 import WikiPermissions from '../views/WikiPermissions.vue'
+import ComputeMesh from '../views/ComputeMesh.vue'
 import PortalLogin from '../views/portal/PortalLogin.vue'
 import Wiki from '../views/portal/Wiki.vue'
 import Chat from '../views/portal/Chat.vue'
@@ -24,6 +25,7 @@ const router = createRouter({
     { path: '/settings', name: 'settings', component: Settings },
     { path: '/backup', name: 'backup', component: Backup },
     { path: '/wiki-permissions', name: 'wiki-permissions', component: WikiPermissions },
+    { path: '/compute-mesh', name: 'compute-mesh', component: ComputeMesh },
     { path: '/portal/login', name: 'portal-login', component: PortalLogin },
     { path: '/portal/wiki/:pathMatch(.*)*', name: 'portal-wiki', component: Wiki },
     { path: '/portal/chat', name: 'portal-chat', component: Chat },

@@ -1,0 +1,56 @@
+# MeshCentral is the engine (AMT power control + Wake-on-LAN relay across
+# an agent network) but is never exposed anywhere — not routed through
+# the edge nginx (no `routes` in manifest.yaml), not linked to from any
+# UI. The only thing that ever talks to it is this platform's own
+# backend, over the shared edge Docker network (the same one every other
+# module's own backend-reachable service joins — see ldap-openldap's
+# compose file for the identical pattern); admins only ever see our own
+# /compute-mesh panel.
+networks:
+  default: {}
+  edge:
+    external: true
+    name: it-platform-edge
+
+volumes:
+  meshcentral-data:
+
+services:
+  # One-shot: creates MeshCentral's single service account our backend
+  # authenticates as (there's no REST bootstrap endpoint the way NetBird
+  # has — this is MeshCentral's own server binary run once in a
+  # standalone utility mode, confirmed by hand against a real container:
+  # `node meshcentral --createaccount ...` exits cleanly without starting
+  # the full server, as long as the image's own entrypoint.sh — which
+  # ignores whatever `command:` you pass and always runs the full server
+  # itself — is bypassed with an explicit `entrypoint:` override). Same
+  # one-shot-init-before-the-real-service shape as vpn-netbird's
+  # netbird-config service.
+  meshcentral-init:
+    image: ghcr.io/ylianst/meshcentral:1.2.5-slim
+    restart: "no"
+    entrypoint: ["node"]
+    command:
+      - /opt/meshcentral/meshcentral
+      - --createaccount
+      - api
+      - --pass
+      - ${api_password}
+      - --email
+      - api@internal.local
+      - --name
+      - "Platform API"
+    volumes:
+      - meshcentral-data:/opt/meshcentral/meshcentral-data
+
+  meshcentral:
+    image: ghcr.io/ylianst/meshcentral:1.2.5-slim
+    restart: unless-stopped
+    volumes:
+      - meshcentral-data:/opt/meshcentral/meshcentral-data
+    depends_on:
+      meshcentral-init:
+        condition: service_completed_successfully
+    networks:
+      - default
+      - edge
