@@ -33,6 +33,15 @@ services:
       # nginx Upgrade/Connection passthrough this needs to actually work
       # through the edge proxy.
       ENABLE_XMPP_WEBSOCKET: "1"
+      # A call is always joined via a link from Chat, never by landing on
+      # this domain bare — the welcome page's own "type a room name and
+      # start a meeting" UI has no reason to exist here, and defaults to
+      # where hangup would otherwise send you. A plain "you can close this
+      # tab now" page after hangup instead (confirmed via the rendered
+      # config.js: enableClosePage/welcomePage.disabled default to false/
+      # true, the opposite of both of these).
+      ENABLE_WELCOME_PAGE: "0"
+      ENABLE_CLOSE_PAGE: "1"
     depends_on:
       - prosody
       - jicofo
