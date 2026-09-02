@@ -18,6 +18,14 @@ type Config struct {
 	NginxContainerName string
 
 	GatewayContainerName string
+
+	// ModuleRegistryURL/Key point this deployment at registry-server (see
+	// the repo's registry/ directory) — the vendor-run service that
+	// discovers and delivers new/updated modules. Both are optional and
+	// empty by default: a deployment with no key configured just never
+	// sees update/new-module badges, rather than failing to start.
+	ModuleRegistryURL string
+	ModuleRegistryKey string
 }
 
 func Load() (*Config, error) {
@@ -34,6 +42,9 @@ func Load() (*Config, error) {
 		NginxContainerName: getEnv("NGINX_CONTAINER_NAME", "itplatform-nginx"),
 
 		GatewayContainerName: getEnv("GATEWAY_CONTAINER_NAME", "itplatform-internal-gateway"),
+
+		ModuleRegistryURL: getEnv("MODULE_REGISTRY_URL", ""),
+		ModuleRegistryKey: getEnv("MODULE_REGISTRY_KEY", ""),
 	}
 
 	if cfg.DatabaseURL == "" {

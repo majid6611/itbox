@@ -77,9 +77,20 @@ type ModuleLink struct {
 
 type ListModulesOutput struct {
 	Body struct {
-		Catalog  []*modules.Manifest     `json:"catalog"`
-		Statuses []modules.Status        `json:"statuses"`
-		Links    map[string][]ModuleLink `json:"links"`
+		Catalog  []*modules.Manifest           `json:"catalog"`
+		Statuses []modules.Status              `json:"statuses"`
+		Links    map[string][]ModuleLink       `json:"links"`
+		Updates  map[string]modules.UpdateInfo `json:"updates"`
+	}
+}
+
+type CheckUpdatesInput struct {
+	SessionToken string `cookie:"itp_session"`
+}
+
+type CheckUpdatesOutput struct {
+	Body struct {
+		Updates []modules.UpdateInfo `json:"updates"`
 	}
 }
 
@@ -131,6 +142,7 @@ func registerModules(api huma.API, s *Server) {
 		out := &ListModulesOutput{}
 		out.Body.Catalog = s.Registry.List()
 		out.Body.Statuses = statuses
+		out.Body.Updates = s.Modules.UpdatesSnapshot()
 		out.Body.Links = make(map[string][]ModuleLink)
 		for _, man := range out.Body.Catalog {
 			for _, r := range man.Routes {
@@ -177,6 +189,12 @@ func registerModules(api huma.API, s *Server) {
 			// (create the device group) that has no config-time
 			// equivalent — see bootstrapComputeMesh's own doc comment.
 			go s.bootstrapComputeMesh(context.Background())
+		}
+		if in.ID == "calendar-radicale" {
+			// Same shape again: wait for the module to come up, then seed
+			// Radicale's two internal accounts and the shared company
+			// calendar — see bootstrapCalendar's own doc comment.
+			go s.bootstrapCalendar(context.Background())
 		}
 		if in.ID == "fileshare-webdav" {
 			// Every other user/group management endpoint creates a WebDAV
@@ -258,6 +276,41 @@ func registerModules(api huma.API, s *Server) {
 		}
 		if err := s.Modules.Uninstall(ctx, in.ID); err != nil {
 			return nil, huma.Error400BadRequest("uninstall failed", err)
+		}
+		out := &ModuleActionOutput{}
+		out.Body.Success = true
+		return out, nil
+	})
+
+	huma.Register(api, huma.Operation{
+		OperationID: "check-module-updates",
+		Method:      "POST",
+		Path:        "/api/modules/check-updates",
+		Summary:     "Check the module registry for new or updated modules",
+	}, func(ctx context.Context, in *CheckUpdatesInput) (*CheckUpdatesOutput, error) {
+		if _, err := s.requireAuth(ctx, in.SessionToken); err != nil {
+			return nil, err
+		}
+		updates, err := s.Modules.CheckForUpdates(ctx)
+		if err != nil {
+			return nil, huma.Error502BadGateway("could not reach the module registry", err)
+		}
+		out := &CheckUpdatesOutput{}
+		out.Body.Updates = updates
+		return out, nil
+	})
+
+	huma.Register(api, huma.Operation{
+		OperationID: "update-module",
+		Method:      "POST",
+		Path:        "/api/modules/{id}/update",
+		Summary:     "Download and apply the latest version of a module found by the last update check",
+	}, func(ctx context.Context, in *ModuleIDInput) (*ModuleActionOutput, error) {
+		if _, err := s.requireAuth(ctx, in.SessionToken); err != nil {
+			return nil, err
+		}
+		if err := s.Modules.ApplyUpdate(ctx, in.ID); err != nil {
+			return nil, huma.Error400BadRequest("update failed", err)
 		}
 		out := &ModuleActionOutput{}
 		out.Body.Success = true
