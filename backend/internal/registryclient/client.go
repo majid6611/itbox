@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	urlpkg "net/url"
 )
 
 type IndexEntry struct {
@@ -87,8 +88,13 @@ func (c *Client) FetchIndex(ctx context.Context) ([]IndexEntry, error) {
 // module bundles are a couple of small text files (manifest.yaml,
 // docker-compose.yaml), nothing sized like a container image.
 func (c *Client) DownloadBundle(ctx context.Context, id, version, expectedSHA256 string) ([]byte, error) {
-	url := fmt.Sprintf("%s/v1/modules/%s/%s/bundle", c.BaseURL, id, version)
-	req, err := c.authedRequest(ctx, http.MethodGet, url)
+	// PathEscape rather than raw formatting — id/version ultimately come
+	// from the registry index (registry-server's own response), not
+	// directly from an end user, but building a URL by string-formatting
+	// external input unescaped is the wrong default regardless of how
+	// trusted that source is today.
+	bundleURL := fmt.Sprintf("%s/v1/modules/%s/%s/bundle", c.BaseURL, urlpkg.PathEscape(id), urlpkg.PathEscape(version))
+	req, err := c.authedRequest(ctx, http.MethodGet, bundleURL)
 	if err != nil {
 		return nil, err
 	}

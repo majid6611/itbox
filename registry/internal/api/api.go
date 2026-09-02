@@ -7,11 +7,13 @@
 package api
 
 import (
+	"crypto/subtle"
 	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"regexp"
 	"strconv"
 	"sync"
 	"time"
@@ -97,7 +99,11 @@ func (s *Server) requireClientAuth(next http.Handler) http.Handler {
 
 func (s *Server) requireAdminAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if bearerToken(r) != s.AdminToken || s.AdminToken == "" {
+		// Constant-time: this token gates issuing/revoking every client's
+		// access, worth closing the timing side-channel a plain != leaves
+		// open even though it's a low-severity one over a real network.
+		presented := bearerToken(r)
+		if s.AdminToken == "" || subtle.ConstantTimeCompare([]byte(presented), []byte(s.AdminToken)) != 1 {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
@@ -130,9 +136,25 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	w.Write(s.indexCache)
 }
 
+// moduleIDPattern/versionPattern bound what a module id/version can ever
+// legitimately be (matching the publish script's own tag/asset-name
+// convention) — checked before either value touches a GitHub API URL.
+// Without this, a crafted id or version reaches github.Client verbatim;
+// even though FetchBundleAsset now escapes both before building a
+// request, validating at the boundary means a malformed request is
+// rejected outright instead of relying on escaping alone to make it safe.
+var (
+	moduleIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
+	versionPattern  = regexp.MustCompile(`^[0-9][0-9A-Za-z.\-]{0,31}$`)
+)
+
 func (s *Server) handleBundle(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	version := chi.URLParam(r, "version")
+	if !moduleIDPattern.MatchString(id) || !versionPattern.MatchString(version) {
+		http.Error(w, "invalid module id or version", http.StatusBadRequest)
+		return
+	}
 	tag := fmt.Sprintf("%s-v%s", id, version)
 	assetName := fmt.Sprintf("%s-%s.tar.gz", id, version)
 
