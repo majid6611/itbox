@@ -10,9 +10,11 @@ import Settings from '../views/Settings.vue'
 import Backup from '../views/Backup.vue'
 import WikiPermissions from '../views/WikiPermissions.vue'
 import ComputeMesh from '../views/ComputeMesh.vue'
+import CalendarSettings from '../views/CalendarSettings.vue'
 import PortalLogin from '../views/portal/PortalLogin.vue'
 import Wiki from '../views/portal/Wiki.vue'
 import Chat from '../views/portal/Chat.vue'
+import Calendar from '../views/portal/Calendar.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -26,9 +28,11 @@ const router = createRouter({
     { path: '/backup', name: 'backup', component: Backup },
     { path: '/wiki-permissions', name: 'wiki-permissions', component: WikiPermissions },
     { path: '/compute-mesh', name: 'compute-mesh', component: ComputeMesh },
+    { path: '/calendar-settings', name: 'calendar-settings', component: CalendarSettings },
     { path: '/portal/login', name: 'portal-login', component: PortalLogin },
     { path: '/portal/wiki/:pathMatch(.*)*', name: 'portal-wiki', component: Wiki },
     { path: '/portal/chat', name: 'portal-chat', component: Chat },
+    { path: '/portal/calendar', name: 'portal-calendar', component: Calendar },
   ],
 })
 

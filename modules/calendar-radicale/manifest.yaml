@@ -1,0 +1,31 @@
+id: calendar-radicale
+name: Calendar
+description: >-
+  A shared company calendar plus a personal calendar for every employee,
+  right in the employee portal. Self-hosts Radicale (a CalDAV server) as
+  the engine, but you only ever see this platform's own calendar view —
+  Radicale's own interface is never exposed. Anyone who wants it can also
+  subscribe from a phone or desktop calendar app (Apple Calendar,
+  Outlook, Thunderbird, ...) using their existing company login, since
+  Radicale speaks the same protocol those apps already understand.
+category: collaboration
+version: "1.0.0"
+compose_file: docker-compose.yaml
+config_schema:
+  # Generated once at install. Two internal Radicale accounts share this
+  # one secret — "platform-service" (which the backend uses for every
+  # day-to-day event read/write) and "company" (used exactly once, to
+  # bootstrap the shared company calendar — see radicalefs.Bootstrap's
+  # doc comment for why that has to happen as a distinct account).
+  # Never shown in any UI, admin or employee.
+  - key: service_password
+    label: Internal Radicale service-account password
+    type: secret
+    hidden: true
+soft_dependencies:
+  - id: ldap-openldap
+    integration: sso
+routes:
+  - service: radicale
+    port: 5232
+internal_panel: /calendar-settings

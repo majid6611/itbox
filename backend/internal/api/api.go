@@ -66,6 +66,8 @@ func NewRouter(s *Server) http.Handler {
 	registerSettings(api, s)
 	registerBackup(api, s)
 	registerComputeMesh(api, s)
+	registerCalendar(api, s)
+	registerCalendarSettings(api, s)
 	registerPortal(api, s)
 
 	s.startBackupScheduler(context.Background())
