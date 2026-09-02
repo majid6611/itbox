@@ -86,6 +86,7 @@ async function handlePortalLogout() {
         <router-link to="/"><Icon name="dashboard" :size="16" /> Dashboard</router-link>
         <router-link to="/modules"><Icon name="modules" :size="16" /> Module Store</router-link>
         <router-link to="/settings"><Icon name="settings" :size="16" /> Settings</router-link>
+        <router-link to="/about"><Icon name="info" :size="16" /> About</router-link>
       </nav>
       <div class="account">
         <span>{{ auth.email }}</span>

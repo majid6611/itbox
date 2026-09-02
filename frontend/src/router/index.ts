@@ -7,6 +7,7 @@ import ModuleStore from '../views/ModuleStore.vue'
 import Users from '../views/Users.vue'
 import Vpn from '../views/Vpn.vue'
 import Settings from '../views/Settings.vue'
+import About from '../views/About.vue'
 import Backup from '../views/Backup.vue'
 import WikiPermissions from '../views/WikiPermissions.vue'
 import ComputeMesh from '../views/ComputeMesh.vue'
@@ -25,6 +26,7 @@ const router = createRouter({
     { path: '/users', name: 'users', component: Users },
     { path: '/vpn', name: 'vpn', component: Vpn },
     { path: '/settings', name: 'settings', component: Settings },
+    { path: '/about', name: 'about', component: About },
     { path: '/backup', name: 'backup', component: Backup },
     { path: '/wiki-permissions', name: 'wiki-permissions', component: WikiPermissions },
     { path: '/compute-mesh', name: 'compute-mesh', component: ComputeMesh },
