@@ -134,6 +134,7 @@ export type ThemeName = 'slate' | 'stone'
 export interface SettingsResponse {
   base_domain: string
   theme: ThemeName
+  platform_version: string
 }
 
 export interface ThemeResponse {

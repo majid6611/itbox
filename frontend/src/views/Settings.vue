@@ -82,6 +82,8 @@ async function save() {
         <span v-if="error" class="error">{{ error }}</span>
       </div>
     </form>
+
+    <p v-if="settings.platformVersion" class="version-line">IT Platform v{{ settings.platformVersion }}</p>
   </div>
 </template>
 
@@ -185,5 +187,10 @@ async function save() {
   color: var(--danger-text);
   font-size: 0.85rem;
   font-weight: 600;
+}
+.version-line {
+  margin-top: 2rem;
+  font-size: 0.78rem;
+  color: var(--text-faint);
 }
 </style>
