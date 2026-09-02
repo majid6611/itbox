@@ -13,6 +13,7 @@ import (
 	"it-platform/backend/internal/employee"
 	"it-platform/backend/internal/modules"
 	"it-platform/backend/internal/proxy"
+	"it-platform/backend/internal/registryclient"
 )
 
 func main() {
@@ -46,7 +47,8 @@ func main() {
 
 	dockerClient := docker.NewClient()
 	proxyManager := proxy.NewManager(dockerClient, cfg.NginxConfDir, cfg.NginxContainerName)
-	moduleManager, err := modules.NewManager(ctx, registry, dockerClient, proxyManager, pool, cfg.DataDir, cfg.BaseDomain, cfg.DatabaseURL)
+	regClient := registryclient.New(cfg.ModuleRegistryURL, cfg.ModuleRegistryKey)
+	moduleManager, err := modules.NewManager(ctx, registry, dockerClient, proxyManager, pool, cfg.DataDir, cfg.BaseDomain, cfg.DatabaseURL, regClient)
 	if err != nil {
 		log.Fatalf("module manager: %v", err)
 	}

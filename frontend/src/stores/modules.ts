@@ -1,6 +1,13 @@
 import { defineStore } from 'pinia'
 import { api } from '../api/client'
-import type { Manifest, ModuleLink, ModuleStatus, ModulesResponse } from '../api/types'
+import type {
+  CheckUpdatesResponse,
+  Manifest,
+  ModuleLink,
+  ModuleStatus,
+  ModulesResponse,
+  ModuleUpdate,
+} from '../api/types'
 
 const POLL_INTERVAL_MS = 3000
 
@@ -11,7 +18,9 @@ export const useModulesStore = defineStore('modules', {
     catalog: [] as Manifest[],
     statuses: {} as Record<string, ModuleStatus>,
     links: {} as Record<string, ModuleLink[]>,
+    updates: {} as Record<string, ModuleUpdate>,
     loading: false,
+    checkingUpdates: false,
   }),
   actions: {
     async fetchAll() {
@@ -21,6 +30,7 @@ export const useModulesStore = defineStore('modules', {
         this.catalog = res.catalog
         this.statuses = Object.fromEntries(res.statuses.map((s) => [s.module_id, s]))
         this.links = res.links
+        this.updates = res.updates
       } finally {
         this.loading = false
       }
@@ -57,6 +67,25 @@ export const useModulesStore = defineStore('modules', {
     },
     async setVisibility(id: string, visibility: 'public' | 'private') {
       await api.post(`/modules/${id}/visibility`, { visibility })
+      await this.fetchAll()
+    },
+    async checkForUpdates() {
+      this.checkingUpdates = true
+      try {
+        const res = await api.post<CheckUpdatesResponse>('/modules/check-updates')
+        this.updates = Object.fromEntries(res.updates.map((u) => [u.module_id, u]))
+        // A brand-new module's files aren't reflected in the catalog we
+        // already loaded — refresh it so it shows up without a manual
+        // page reload.
+        if (res.updates.some((u) => u.new)) {
+          await this.fetchAll()
+        }
+      } finally {
+        this.checkingUpdates = false
+      }
+    },
+    async applyUpdate(id: string) {
+      await api.post(`/modules/${id}/update`)
       await this.fetchAll()
     },
   },

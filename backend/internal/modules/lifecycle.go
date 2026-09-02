@@ -20,6 +20,7 @@ import (
 
 	"it-platform/backend/internal/docker"
 	"it-platform/backend/internal/proxy"
+	"it-platform/backend/internal/registryclient"
 )
 
 type Status struct {
@@ -70,6 +71,20 @@ type Manager struct {
 	// what a service (like Postgres) actually initialized with, leaving
 	// the module permanently unable to authenticate to its own database.
 	inFlight sync.Map // moduleID string -> struct{}{}
+
+	// registryClient talks to registry-server (see backend/internal/
+	// registryclient) to discover and download new/updated modules. Nil
+	// (Configured() false) is the normal state for a deployment with no
+	// registry set up — CheckForUpdates/ApplyUpdate then just no-op.
+	registryClient *registryclient.Client
+
+	// updates and updateEntries are CheckForUpdates' cached result:
+	// updates is what GET /api/modules reads on every load (cheap,
+	// read-only), updateEntries carries the extra fields (checksum, the
+	// registry's own module id) ApplyUpdate needs to actually act on one.
+	updatesMu     sync.RWMutex
+	updates       map[string]UpdateInfo
+	updateEntries map[string]registryclient.IndexEntry
 }
 
 // NewManager loads the platform's base domain from the database if a
@@ -77,7 +92,7 @@ type Manager struct {
 // defaultBaseDomain (the BASE_DOMAIN env var) so existing deployments
 // keep working unchanged and there's a row for a future Settings save to
 // update.
-func NewManager(ctx context.Context, registry *Registry, dockerClient *docker.Client, proxyManager *proxy.Manager, db *pgxpool.Pool, dataDir, defaultBaseDomain, databaseURL string) (*Manager, error) {
+func NewManager(ctx context.Context, registry *Registry, dockerClient *docker.Client, proxyManager *proxy.Manager, db *pgxpool.Pool, dataDir, defaultBaseDomain, databaseURL string, registryClient *registryclient.Client) (*Manager, error) {
 	baseDomain := defaultBaseDomain
 	var stored string
 	err := db.QueryRow(ctx, `SELECT base_domain FROM platform_settings WHERE id = true`).Scan(&stored)
@@ -97,7 +112,7 @@ func NewManager(ctx context.Context, registry *Registry, dockerClient *docker.Cl
 		return nil, fmt.Errorf("load theme: %w", err)
 	}
 
-	return &Manager{registry: registry, docker: dockerClient, proxy: proxyManager, db: db, dataDir: dataDir, baseDomain: baseDomain, theme: theme, databaseURL: databaseURL}, nil
+	return &Manager{registry: registry, docker: dockerClient, proxy: proxyManager, db: db, dataDir: dataDir, baseDomain: baseDomain, theme: theme, databaseURL: databaseURL, registryClient: registryClient}, nil
 }
 
 // beginOp claims exclusive access to a module for the duration of a
@@ -500,7 +515,16 @@ func (m *Manager) doInstall(ctx context.Context, moduleID string, manifest *Mani
 	if err != nil {
 		return fmt.Errorf("marshal config: %w", err)
 	}
-	_, err = m.db.Exec(ctx, `UPDATE installed_modules SET status = 'running', config = $2, updated_at = now() WHERE module_id = $1`,
+	// Merges (jsonb ||) rather than replaces the stored config. On a
+	// fresh install the row starts at '{}', so this is identical to a
+	// plain overwrite — but doInstall is also what ApplyUpdate calls to
+	// bring an already-running module onto a new version, and some
+	// modules stash extra state in this same column after install that
+	// never goes through ConfigSchema (compute-mesh's mesh_id, netbird's
+	// management_pat). An overwrite here would silently erase that state
+	// on every update; a merge preserves it since resolved never
+	// contains those keys to begin with.
+	_, err = m.db.Exec(ctx, `UPDATE installed_modules SET status = 'running', config = config || $2::jsonb, updated_at = now() WHERE module_id = $1`,
 		moduleID, configJSON)
 	if err != nil {
 		return fmt.Errorf("record install: %w", err)

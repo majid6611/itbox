@@ -76,17 +76,49 @@ async function run(id: string, action: 'enable' | 'disable' | 'uninstall') {
     busy[id] = false
   }
 }
+
+function severityPillClass(severity: string) {
+  if (severity === 'security') return 'pill-bad'
+  if (severity === 'recommended') return 'pill-warn'
+  return 'pill-neutral'
+}
+
+async function applyModuleUpdate(id: string) {
+  busy[id] = true
+  try {
+    await modules.applyUpdate(id)
+  } finally {
+    busy[id] = false
+  }
+}
 </script>
 
 <template>
   <div>
-    <h1>Module Store</h1>
-    <p class="subtitle">Install, configure, and manage the services running on this deployment.</p>
+    <div class="header-row">
+      <div>
+        <h1>Module Store</h1>
+        <p class="subtitle">Install, configure, and manage the services running on this deployment.</p>
+      </div>
+      <button class="secondary" :disabled="modules.checkingUpdates" @click="modules.checkForUpdates()">
+        {{ modules.checkingUpdates ? 'Checking…' : 'Check for updates' }}
+      </button>
+    </div>
     <div class="grid">
       <div v-for="m in modules.catalog" :key="m.id" class="card">
         <h2>{{ m.name }}</h2>
         <p>{{ m.description }}</p>
         <p class="category">{{ m.category }}</p>
+
+        <div v-if="modules.updates[m.id]" class="update-notice">
+          <span class="pill" :class="severityPillClass(modules.updates[m.id].severity)">
+            {{ modules.updates[m.id].severity }} update
+          </span>
+          <p class="changelog">{{ modules.updates[m.id].changelog }}</p>
+          <button class="secondary" :disabled="busy[m.id]" @click="applyModuleUpdate(m.id)">
+            {{ busy[m.id] ? 'Updating…' : `Update to ${modules.updates[m.id].latest_version}` }}
+          </button>
+        </div>
 
         <div v-if="statusFor(m.id) === 'installing'" class="installing">
           <span class="pill pill-neutral">installing…</span>
@@ -159,6 +191,22 @@ h1 {
   color: var(--text-dim);
   font-size: 0.92rem;
   margin: 0 0 1.75rem;
+}
+.header-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.update-notice {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.65rem 0.75rem;
+  margin-bottom: 0.75rem;
+}
+.update-notice .changelog {
+  font-size: 0.85rem;
+  margin: 0.4rem 0 0.6rem;
 }
 .grid {
   display: grid;
