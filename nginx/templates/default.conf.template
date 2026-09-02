@@ -2,7 +2,18 @@
 # by the backend directly into /etc/nginx/conf.d/<module-id>.conf at
 # install time (see backend/internal/proxy).
 server {
-    listen 80;
+    # default_server: without an explicit marker, nginx falls back to
+    # whichever conf.d file happens to load first (alphabetically) for
+    # unmatched Host headers — confirmed live, this silently changes
+    # every time a module's vhost filename happens to sort ahead of
+    # "default.conf" (e.g. calendar-radicale__default.conf did, and every
+    # request with a Host header that didn't exactly match a real
+    # server_name — including this platform's own test tooling's
+    # container-DNS-name Host header used throughout local testing — was
+    # quietly being served by Radicale instead of the main app). Pinning
+    # it here means the main platform UI is always the fallback,
+    # regardless of what modules get installed or in what order.
+    listen 80 default_server;
     server_name ${BASE_DOMAIN};
 
     # Raised from nginx's 1 MB default — see frontend/nginx.conf's own
@@ -28,4 +39,21 @@ server {
         proxy_read_timeout 600s;
         proxy_send_timeout 600s;
     }
+}
+
+# Catch-all for HTTPS on any hostname that isn't a module with its own TLS
+# vhost (see backend/internal/proxy's NeedsTLS handling, and
+# modules/manifest.go's NeedsTLS field). Without this, nginx falls back to
+# whichever TLS-enabled module's server block happens to be the only one
+# bound to :443, silently serving *that* module's app for a totally
+# unrelated hostname — confirmed live: with only video-jitsi's TLS vhost
+# present, https://calendar-radicale.<domain>/ served Jitsi's own UI, not
+# even a 404. default_server pins this block as the fallback regardless of
+# how many (or how few) TLS modules exist or what order their conf.d files
+# load in. Rejecting the handshake outright needs no certificate of its
+# own.
+server {
+    listen 443 ssl default_server;
+    server_name _;
+    ssl_reject_handshake on;
 }
