@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 )
 
 type Client struct {
@@ -56,8 +57,8 @@ type contentsResponse struct {
 // FetchIndex returns index.json's current contents from the repo's
 // default branch.
 func (c *Client) FetchIndex(ctx context.Context) ([]byte, error) {
-	url := fmt.Sprintf("%s/repos/%s/%s/contents/index.json", c.BaseURL, c.Owner, c.Repo)
-	req, err := c.authedRequest(http.MethodGet, url, "application/vnd.github+json")
+	reqURL := fmt.Sprintf("%s/repos/%s/%s/contents/index.json", c.BaseURL, url.PathEscape(c.Owner), url.PathEscape(c.Repo))
+	req, err := c.authedRequest(http.MethodGet, reqURL, "application/vnd.github+json")
 	if err != nil {
 		return nil, err
 	}
@@ -115,7 +116,13 @@ type release struct {
 // ("<module id>-<version>.tar.gz"). The caller must Close the returned
 // reader.
 func (c *Client) FetchBundleAsset(ctx context.Context, tag, assetName string) (io.ReadCloser, error) {
-	relURL := fmt.Sprintf("%s/repos/%s/%s/releases/tags/%s", c.BaseURL, c.Owner, c.Repo, tag)
+	// PathEscape even though api.go's handleBundle already validates tag/
+	// assetName against a strict allowlist before they get here — this
+	// package has its own callers (registryclient.DownloadBundle, driven
+	// by index.json's own fields) that don't go through that check, and a
+	// URL built by raw string formatting of external input is the wrong
+	// default regardless of what today's callers happen to pass.
+	relURL := fmt.Sprintf("%s/repos/%s/%s/releases/tags/%s", c.BaseURL, url.PathEscape(c.Owner), url.PathEscape(c.Repo), url.PathEscape(tag))
 	req, err := c.authedRequest(http.MethodGet, relURL, "application/vnd.github+json")
 	if err != nil {
 		return nil, err

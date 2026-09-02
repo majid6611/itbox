@@ -257,7 +257,7 @@ func registerComputeMesh(api huma.API, s *Server) {
 			return nil, huma.Error400BadRequest("the Compute Mesh module isn't available")
 		}
 		if err := client.PowerAction(ctx, []string{nodeID}, actionType); err != nil {
-			return nil, huma.Error500InternalServerError("power action failed", err)
+			return nil, internalError("power action failed", err)
 		}
 		out := &ModuleActionOutput{}
 		out.Body.Success = true

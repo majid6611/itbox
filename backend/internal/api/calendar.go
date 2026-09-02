@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"log"
+	"net/url"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -92,6 +93,22 @@ func (s *Server) ensurePersonalCalendar(ctx context.Context, username, password 
 	if err := s.syncCalendarLogin(ctx, username, password); err != nil {
 		log.Printf("provision personal calendar for %s: %v", username, err)
 	}
+}
+
+// validVideoCallURL rejects anything but a plain http(s) link — any
+// employee can set this field on a company-calendar event another
+// employee will later see rendered as a clickable link (Calendar.vue's
+// edit modal), so an unvalidated value here is a stored XSS vector via a
+// javascript: URI. Empty is fine (no video call attached).
+func validVideoCallURL(raw string) bool {
+	if raw == "" {
+		return true
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return false
+	}
+	return u.Scheme == "http" || u.Scheme == "https"
 }
 
 // calendarPathFor maps this API's "company"|"personal" calendar
@@ -248,10 +265,22 @@ func registerCalendar(api huma.API, s *Server) {
 				return nil, internalError("list "+kind+" calendar events", err)
 			}
 			for _, ev := range events {
+				// Our own create/update handlers already reject anything
+				// but a plain http(s) URL here — but the company calendar
+				// is also writable directly via CalDAV (any employee's own
+				// Radicale login, see radicalefs.SyncUser), which has no
+				// idea this field exists let alone that it should be
+				// scheme-restricted. Re-checking on the way out is what
+				// actually closes the javascript:-URI stored-XSS path,
+				// not the write-side check alone.
+				videoCallURL := ev.VideoCallURL
+				if !validVideoCallURL(videoCallURL) {
+					videoCallURL = ""
+				}
 				out.Body.Events = append(out.Body.Events, CalendarEventOut{
 					UID: ev.UID, Calendar: kind, Title: ev.Title, Description: ev.Description,
 					Start: ev.Start, End: ev.End, AllDay: ev.AllDay, CreatedBy: ev.CreatedBy,
-					Attendees: ev.Attendees, VideoCallURL: ev.VideoCallURL,
+					Attendees: ev.Attendees, VideoCallURL: videoCallURL,
 				})
 			}
 		}
@@ -281,6 +310,9 @@ func registerCalendar(api huma.API, s *Server) {
 		}
 		if in.Body.Title == "" {
 			return nil, huma.Error400BadRequest("title is required")
+		}
+		if !validVideoCallURL(in.Body.VideoCallURL) {
+			return nil, huma.Error400BadRequest("video call link must be a plain http(s) URL")
 		}
 		uid := uuid.NewString()
 		ev := caldavclient.Event{
@@ -319,6 +351,9 @@ func registerCalendar(api huma.API, s *Server) {
 		}
 		if in.Body.Title == "" {
 			return nil, huma.Error400BadRequest("title is required")
+		}
+		if !validVideoCallURL(in.Body.VideoCallURL) {
+			return nil, huma.Error400BadRequest("video call link must be a plain http(s) URL")
 		}
 		// PUT replaces the whole resource, so the original creator has to
 		// be read back first or it's lost — falls back to whoever's
