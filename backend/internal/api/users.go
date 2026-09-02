@@ -9,6 +9,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 
 	"it-platform/backend/internal/directory"
+	"it-platform/backend/internal/radicalefs"
 	"it-platform/backend/internal/webdavfs"
 )
 
@@ -91,6 +92,41 @@ func (s *Server) syncWebdavLogin(ctx context.Context, username, password string,
 	volume := s.Modules.VolumeName("fileshare-webdav", "webdav_config")
 	container := s.Modules.ContainerName("fileshare-webdav", "webdav")
 	return webdavfs.SyncUser(ctx, s.Docker, volume, container, username, password, usernames, groupOf, groupNames)
+}
+
+// syncCalendarLogin gives a user a Radicale login matching their current
+// company password and ensures their personal calendar exists — no-op if
+// calendar-radicale isn't installed. Same best-effort reasoning as
+// syncWebdavLogin: it reuses the plaintext password the caller already
+// has in hand at account-creation/reset time rather than generating a
+// separate secret, exactly like WebDAV's own login does.
+func (s *Server) syncCalendarLogin(ctx context.Context, username, password string) error {
+	status, ok, err := s.Modules.GetInstalled(ctx, "calendar-radicale")
+	if err != nil {
+		return err
+	}
+	if !ok || status.Status != "running" {
+		return nil
+	}
+	volume := s.Modules.VolumeName("calendar-radicale", "radicale_config")
+	container := s.Modules.ContainerName("calendar-radicale", "radicale")
+	addr := s.Modules.ServiceAddr("calendar-radicale", "radicale", 5232)
+	return radicalefs.SyncUser(ctx, s.Docker, volume, container, "http://"+addr, username, password)
+}
+
+// removeCalendarLogin revokes a user's Radicale login — their calendar
+// data is left alone, matching removeWebdavLogin's exact behavior.
+func (s *Server) removeCalendarLogin(ctx context.Context, username string) error {
+	status, ok, err := s.Modules.GetInstalled(ctx, "calendar-radicale")
+	if err != nil {
+		return err
+	}
+	if !ok || status.Status != "running" {
+		return nil
+	}
+	volume := s.Modules.VolumeName("calendar-radicale", "radicale_config")
+	container := s.Modules.ContainerName("calendar-radicale", "radicale")
+	return radicalefs.RemoveUser(ctx, s.Docker, volume, container, username)
 }
 
 // backfillWebdavFolders waits for a freshly-installed fileshare-webdav to
@@ -375,6 +411,9 @@ func registerUsers(api huma.API, s *Server) {
 		} else if err := s.syncWebdavLogin(ctx, in.Body.Username, used, usernames, groupOf, groupNames); err != nil {
 			log.Printf("sync webdav login for %s: %v", in.Body.Username, err)
 		}
+		if err := s.syncCalendarLogin(ctx, in.Body.Username, used); err != nil {
+			log.Printf("sync calendar login for %s: %v", in.Body.Username, err)
+		}
 		out := &CreateUserOutput{}
 		out.Body.Success = true
 		out.Body.Password = used
@@ -482,6 +521,9 @@ func registerUsers(api huma.API, s *Server) {
 		} else if err := s.syncWebdavLogin(ctx, in.Username, used, usernames, groupOf, groupNames); err != nil {
 			log.Printf("sync webdav login for %s: %v", in.Username, err)
 		}
+		if err := s.syncCalendarLogin(ctx, in.Username, used); err != nil {
+			log.Printf("sync calendar login for %s: %v", in.Username, err)
+		}
 		out := &ResetPasswordOutput{}
 		out.Body.Success = true
 		out.Body.Password = used
@@ -528,6 +570,9 @@ func registerUsers(api huma.API, s *Server) {
 		if err := s.removeWebdavLogin(ctx, in.Username); err != nil {
 			log.Printf("remove webdav login for %s: %v", in.Username, err)
 		}
+		if err := s.removeCalendarLogin(ctx, in.Username); err != nil {
+			log.Printf("remove calendar login for %s: %v", in.Username, err)
+		}
 		if _, err := s.DB.Exec(ctx, `DELETE FROM disabled_users WHERE username = $1`, in.Username); err != nil {
 			log.Printf("clear disabled flag for deleted user %s: %v", in.Username, err)
 		}
@@ -560,6 +605,9 @@ func registerUsers(api huma.API, s *Server) {
 		}
 		if err := s.removeWebdavLogin(ctx, in.Username); err != nil {
 			log.Printf("remove webdav login for disabled user %s: %v", in.Username, err)
+		}
+		if err := s.removeCalendarLogin(ctx, in.Username); err != nil {
+			log.Printf("remove calendar login for disabled user %s: %v", in.Username, err)
 		}
 		if _, err := s.DB.Exec(ctx, `INSERT INTO disabled_users (username) VALUES ($1) ON CONFLICT DO NOTHING`, in.Username); err != nil {
 			return nil, internalError("record disabled state", err)
@@ -596,6 +644,9 @@ func registerUsers(api huma.API, s *Server) {
 			log.Printf("gather webdav group context: %v", err)
 		} else if err := s.syncWebdavLogin(ctx, in.Username, used, usernames, groupOf, groupNames); err != nil {
 			log.Printf("sync webdav login for re-enabled user %s: %v", in.Username, err)
+		}
+		if err := s.syncCalendarLogin(ctx, in.Username, used); err != nil {
+			log.Printf("sync calendar login for re-enabled user %s: %v", in.Username, err)
 		}
 		if _, err := s.DB.Exec(ctx, `DELETE FROM disabled_users WHERE username = $1`, in.Username); err != nil {
 			return nil, internalError("clear disabled state", err)

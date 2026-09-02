@@ -68,6 +68,9 @@ async function handlePortalLogout() {
           <Icon name="chat" :size="16" /> Chat
           <span v-if="chat.hasUnread" class="nav-badge" aria-label="Unread messages"></span>
         </router-link>
+        <router-link v-if="portalModules.calendarAvailable" :to="{ name: 'portal-calendar' }">
+          <Icon name="calendar" :size="16" /> Calendar
+        </router-link>
       </nav>
       <div class="account">
         <span>{{ portal.username }}</span>

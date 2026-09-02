@@ -111,6 +111,21 @@ type PortalModulesOutput struct {
 		// the frontend needs the real base URL to build a room link from,
 		// not just a yes/no.
 		VideoCallBaseURL string `json:"video_call_base_url,omitempty"`
+		// CalendarAvailable is true once calendar-radicale is installed
+		// and running — a plain bool rather than folding into Modules,
+		// for the same reason VideoCallBaseURL isn't: it's not a
+		// path-routed feature-module, it's a core-backend endpoint
+		// backed by an engine module, same shape as compute-mesh.
+		CalendarAvailable bool `json:"calendar_available"`
+		// CalendarCalDAVBaseURL is Radicale's own routed hostname — plain
+		// http, not https (see calendar-radicale's manifest: no needs_tls,
+		// same call as fileshare-webdav's WebDAV, which native OS clients
+		// already accept unencrypted for a manually-added account). "" if
+		// the module isn't installed and running. Used to build the exact
+		// URLs a phone/desktop calendar app subscribes to directly —
+		// see radicalefs.CompanyCalendarPath/PersonalCalendarPath for the
+		// paths appended to it.
+		CalendarCalDAVBaseURL string `json:"calendar_caldav_base_url,omitempty"`
 	}
 }
 
@@ -138,6 +153,18 @@ func registerPortal(api huma.API, s *Server) {
 			return nil, huma.Error401Unauthorized("invalid username or password")
 		}
 		s.employeeLoginLimiter.Reset(key)
+		// The only point in this account's whole lifecycle where its
+		// plaintext password passes through the backend without also
+		// being the moment it was just generated (create/reset already
+		// cover that — see syncCalendarLogin's call sites in users.go).
+		// Anyone whose account predates calendar-radicale being
+		// installed needs this to ever get a working personal calendar
+		// at all, since nothing else back-fills it (see
+		// caldavclient.EnsureCalendarAsOwner's doc comment on why a
+		// service account can't create it on their behalf). Guarded by
+		// a cheap existence check first so this is a no-op — no restart,
+		// one PROPFIND — on every login after the first.
+		s.ensurePersonalCalendar(ctx, in.Body.Username, in.Body.Password)
 		out := &PortalLoginOutput{}
 		out.Body.Username = in.Body.Username
 		out.SetCookie = []string{(&http.Cookie{
@@ -214,6 +241,10 @@ func registerPortal(api huma.API, s *Server) {
 			// https, not http — video-jitsi is served over a real (if
 			// self-signed) TLS listener, see its manifest's needs_tls.
 			out.Body.VideoCallBaseURL = "https://" + s.Modules.Hostname("video-jitsi", "")
+		}
+		if status, ok, err := s.Modules.GetInstalled(ctx, "calendar-radicale"); err == nil && ok && status.Status == "running" {
+			out.Body.CalendarAvailable = true
+			out.Body.CalendarCalDAVBaseURL = "http://" + s.Modules.Hostname("calendar-radicale", "")
 		}
 		return out, nil
 	})

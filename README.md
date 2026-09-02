@@ -120,6 +120,7 @@ Modules currently in the catalog:
 | `chat` | implemented — feature module, live group/DM chat with file sharing and presence |
 | `video-jitsi` | implemented — feature module, self-hosted video calls (Jitsi Meet), linkable from chat |
 | `compute-mesh` | implemented — remote power control (Intel AMT: on/off/cycle) via a self-hosted MeshCentral engine behind our own UI |
+| `calendar-radicale` | implemented — feature module, shared company calendar + a personal one per employee, via a self-hosted Radicale (CalDAV) engine; also subscribable from native calendar apps |
 
 **Why Garage, not MinIO:** MinIO was the original pick, but its
 community edition's web console was stripped out in mid-2025 and the

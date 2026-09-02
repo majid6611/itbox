@@ -47,10 +47,27 @@ export interface ModuleStatus {
   private_port?: number
 }
 
+export type UpdateSeverity = 'security' | 'recommended' | 'optional'
+
+export interface ModuleUpdate {
+  module_id: string
+  name: string
+  current_version: string
+  latest_version: string
+  severity: UpdateSeverity
+  changelog: string
+  new: boolean
+}
+
 export interface ModulesResponse {
   catalog: Manifest[]
   statuses: ModuleStatus[]
   links: Record<string, ModuleLink[]>
+  updates: Record<string, ModuleUpdate>
+}
+
+export interface CheckUpdatesResponse {
+  updates: ModuleUpdate[]
 }
 
 export interface CompanyUser {
@@ -216,6 +233,41 @@ export interface ChatCustomGroup {
   name: string
   created_by: string
   members: string[]
+}
+
+export type CalendarKind = 'company' | 'personal'
+
+export interface CalendarEvent {
+  uid: string
+  calendar: CalendarKind
+  title: string
+  description: string
+  start: string
+  end: string
+  all_day: boolean
+  created_by?: string
+  attendees?: string[]
+  video_call_url?: string
+}
+
+export interface DirectoryUser {
+  username: string
+  name: string
+}
+
+export interface CalendarEventsResponse {
+  available: boolean
+  events: CalendarEvent[]
+}
+
+export type CalendarDefaultView = 'month' | 'week' | 'day'
+
+export interface CalendarSettings {
+  start_time: string
+  end_time: string
+  slot_duration_minutes: number
+  default_view: CalendarDefaultView
+  member_colors: Record<string, string>
 }
 
 export interface ChatEvent {

@@ -1,0 +1,91 @@
+# Radicale (CalDAV) is the engine, but nobody ever sees its own UI — it
+# doesn't have one worth exposing anyway. The backend talks to it over
+# the shared edge network to manage events server-side for the portal's
+# own calendar view; it's also routed publicly so native calendar apps
+# (Apple Calendar, Outlook, ...) can subscribe directly, same dual-access
+# shape as fileshare-webdav.
+networks:
+  default: {}
+  edge:
+    external: true
+    name: it-platform-edge
+
+volumes:
+  radicale_config:
+  radicale_data:
+
+services:
+  # Writes the two static config files Radicale needs (server/auth/rights
+  # wiring — see backend/internal/radicalefs's doc comment for why the
+  # rights file's shape is the way it is, verified against a real running
+  # Radicale rather than assumed) plus an empty users file so Radicale has
+  # something to start against before the backend's own bootstrap step
+  # (which needs the container already running) fills it in. No secrets
+  # here at all — those go through radicalefs, written directly into this
+  # same volume, since htpasswd needs a bcrypt hash the backend computes
+  # itself, not something docker-compose's plain ${var} substitution can
+  # produce.
+  radicale-config:
+    image: busybox:latest
+    restart: "no"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        cat > /config/config <<'EOF'
+        [server]
+        hosts = 0.0.0.0:5232
+
+        [auth]
+        type = htpasswd
+        htpasswd_filename = /config/users
+        htpasswd_encryption = bcrypt
+
+        [rights]
+        type = from_file
+        file = /config/rights
+
+        [storage]
+        filesystem_folder = /data/collections
+        EOF
+        cat > /config/rights <<'EOF'
+        [service-account]
+        user: platform-service
+        collection: .*
+        permissions: RWrw
+
+        [own-principal]
+        user: .+
+        collection: {user}
+        permissions: RW
+
+        [own-calendars]
+        user: .+
+        collection: {user}/.*
+        permissions: RWrw
+
+        [company-principal]
+        user: .+
+        collection: company
+        permissions: RW
+
+        [company-calendar]
+        user: .+
+        collection: company/.*
+        permissions: RWrw
+        EOF
+        touch /config/users
+    volumes:
+      - radicale_config:/config
+
+  radicale:
+    image: tomsquest/docker-radicale:3.7.6.0
+    restart: unless-stopped
+    volumes:
+      - radicale_config:/config:ro
+      - radicale_data:/data
+    depends_on:
+      radicale-config:
+        condition: service_completed_successfully
+    networks:
+      - default
+      - edge
