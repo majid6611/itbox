@@ -7,6 +7,7 @@ export const useSettingsStore = defineStore('settings', {
   state: () => ({
     baseDomain: '',
     theme: 'slate' as ThemeName,
+    platformVersion: '',
     loading: false,
   }),
   actions: {
@@ -16,6 +17,7 @@ export const useSettingsStore = defineStore('settings', {
         const res = await api.get<SettingsResponse>('/settings')
         this.baseDomain = res.base_domain
         this.theme = res.theme
+        this.platformVersion = res.platform_version
       } finally {
         this.loading = false
       }

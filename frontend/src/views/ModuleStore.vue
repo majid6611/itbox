@@ -108,7 +108,7 @@ async function applyModuleUpdate(id: string) {
       <div v-for="m in modules.catalog" :key="m.id" class="card">
         <h2>{{ m.name }}</h2>
         <p>{{ m.description }}</p>
-        <p class="category">{{ m.category }}</p>
+        <p class="category">{{ m.category }} · v{{ m.version }}</p>
 
         <div v-if="modules.updates[m.id]" class="update-notice">
           <span class="pill" :class="severityPillClass(modules.updates[m.id].severity)">

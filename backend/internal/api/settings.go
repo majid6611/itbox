@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
+
+	"it-platform/backend/internal/version"
 )
 
 type GetSettingsInput struct {
@@ -13,8 +15,9 @@ type GetSettingsInput struct {
 
 type GetSettingsOutput struct {
 	Body struct {
-		BaseDomain string `json:"base_domain"`
-		Theme      string `json:"theme"`
+		BaseDomain      string `json:"base_domain"`
+		Theme           string `json:"theme"`
+		PlatformVersion string `json:"platform_version"`
 	}
 }
 
@@ -45,6 +48,7 @@ func registerSettings(api huma.API, s *Server) {
 		out := &GetSettingsOutput{}
 		out.Body.BaseDomain = s.Modules.BaseDomain()
 		out.Body.Theme = s.Modules.Theme()
+		out.Body.PlatformVersion = version.Version
 		return out, nil
 	})
 
@@ -76,6 +80,7 @@ func registerSettings(api huma.API, s *Server) {
 		out := &GetSettingsOutput{}
 		out.Body.BaseDomain = domain
 		out.Body.Theme = in.Body.Theme
+		out.Body.PlatformVersion = version.Version
 		return out, nil
 	})
 
