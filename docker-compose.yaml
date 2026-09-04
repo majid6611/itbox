@@ -91,8 +91,8 @@ services:
       NGINX_CONF_DIR: /app/nginx/conf.d
       NGINX_CONTAINER_NAME: itplatform-nginx
       GATEWAY_CONTAINER_NAME: itplatform-internal-gateway
-      MODULE_REGISTRY_URL: ${MODULE_REGISTRY_URL}
-      MODULE_REGISTRY_KEY: ${MODULE_REGISTRY_KEY}
+      MODULE_REGISTRY_URL: ${MODULE_REGISTRY_URL:-}
+      MODULE_REGISTRY_KEY: ${MODULE_REGISTRY_KEY:-}
     volumes:
       # Writable, not :ro — the module registry (see registry/) downloads
       # brand-new and updated modules' manifest.yaml/docker-compose.yaml
