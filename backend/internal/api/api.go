@@ -40,6 +40,24 @@ type Server struct {
 
 const sessionCookieName = "itp_session"
 
+// apiConfig is huma.DefaultConfig minus its automatic $schema-field/Link-
+// header transformer — that transformer guesses the response scheme from
+// a hardcoded "https unless the Host is literally localhost/127.0.0.1"
+// rule (confirmed by reading huma's own SchemaLinkTransformer.Transform),
+// which is wrong for this platform's actual deployment shape: a real
+// domain or IP, served over plain HTTP behind nginx, with no TLS on the
+// core app itself (see NeedsTLS's doc comment — that's a per-module
+// exception, not the platform default). The result was every response
+// carrying a $schema URL starting "https://" that nothing actually
+// serves. The feature itself (editor/tooling schema hints) has no real
+// audience for this platform, so dropping it outright is simpler than
+// trying to out-guess the scheme correctly in every deployment shape.
+func apiConfig() huma.Config {
+	config := huma.DefaultConfig("IT Platform API", "0.1.0")
+	config.CreateHooks = nil
+	return config
+}
+
 // loginRateLimit is shared by both login endpoints — 10 failed attempts
 // per IP in a 15-minute window. Generous enough that a real person
 // mistyping their password a few times never gets caught by it, tight
@@ -52,7 +70,7 @@ const (
 
 func NewRouter(s *Server) http.Handler {
 	router := chi.NewMux()
-	api := humachi.New(router, huma.DefaultConfig("IT Platform API", "0.1.0"))
+	api := humachi.New(router, apiConfig())
 
 	s.adminLoginLimiter = ratelimit.New(loginRateLimitMax, loginRateLimitWindow)
 	s.employeeLoginLimiter = ratelimit.New(loginRateLimitMax, loginRateLimitWindow)
