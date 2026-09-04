@@ -5,6 +5,32 @@ Self-hosted, web-based, dockerized IT platform for small companies. Services
 management) are installed as independent modules from a built-in Module
 Store, so a company only runs what it needs.
 
+## Installation
+
+For a real deployment (a fresh Ubuntu/Debian server, or your own machine):
+
+```sh
+git clone https://github.com/majid6611/itbox.git
+cd itbox
+./install.sh
+```
+
+`install.sh` installs Docker if it isn't already there, asks for the
+admin account (email + a password, entered twice and hidden) and the
+domain this deployment is reached at (`localhost` is fine for trying it
+out — no setup needed, `*.localhost` resolves to your own machine
+automatically), then starts everything. That's the whole install — no
+manual `.env` editing, no compiler, nothing else to configure first.
+
+Safe to re-run: if `.env` already exists, it's left alone by default, so
+running `./install.sh` again on an already-set-up machine just
+(re)starts the platform.
+
+Once it's up, open the domain you gave it and log in with the admin
+account you just set — then use the Module Store to turn on whatever the
+company actually needs (Identity/LDAP is required by almost everything
+else, so that's a good first install).
+
 ## Stack
 
 - Backend: Go (Huma v2 + chi), talks to the Docker Engine via the `docker`
@@ -18,7 +44,10 @@ Store, so a company only runs what it needs.
   tells nginx to reload, so modules become reachable at their own
   hostname on install without any manual proxy config.
 
-## Running
+## Running (development)
+
+For working on the platform itself, rather than installing it — builds
+from source instead of using `install.sh`'s Docker-only path:
 
 ```sh
 cp .env.example .env   # fill in real secrets, set BASE_DOMAIN
