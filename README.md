@@ -1,9 +1,9 @@
 # IT Platform
 
 Self-hosted, web-based, dockerized IT platform for small companies. Services
-(VPN, LDAP, fileshare, S3, wiki, chat, video calls, remote power
-management) are installed as independent modules from a built-in Module
-Store, so a company only runs what it needs.
+(VPN, LDAP, fileshare, S3, wiki, chat, video calls, office phone system,
+calendar, remote power management) are installed as independent modules
+from a built-in Module Store, so a company only runs what it needs.
 
 ## Installation
 
@@ -98,6 +98,18 @@ from inside its own container against the *host's* Docker socket
 `docker-compose.yaml` will not resolve correctly this way — **use named
 Docker volumes for module data**, not host bind mounts.
 
+**Feature-module images are built locally**, not pulled — the modules
+that ship their own service code reference `it-<name>:latest` images that
+must exist on the host before they're installed from the Module Store
+(`install.sh` doesn't build these yet):
+
+```sh
+docker build -t it-wiki:latest     modules/wiki/service
+docker build -t it-chat:latest     modules/chat/service
+docker build -t it-voip:latest     modules/voip/service
+docker build -t it-asterisk:latest modules/voip/asterisk
+```
+
 ## Routing
 
 The edge nginx (`docker-compose.yaml`, container `itplatform-nginx`) is the
@@ -144,7 +156,7 @@ Modules currently in the catalog:
 | `s3-storage` | implemented — S3-compatible object storage (Garage + web console) |
 | `fileshare-webdav` | implemented — network file share (WebDAV), mounts as a drive in Explorer/Finder |
 | `ldap-openldap` | implemented — company directory (OpenLDAP), managed from our own Users panel |
-| `vpn-netbird` | implemented — self-hosted WireGuard mesh VPN (Netbird) |
+| `vpn-netbird` | implemented — self-hosted WireGuard mesh VPN (Netbird); optionally lets VPN users reach the whole office network |
 | `wiki` | implemented — feature module, employee wiki with revision history and per-page permissions |
 | `chat` | implemented — feature module, live group/DM chat with file sharing and presence |
 | `video-jitsi` | implemented — feature module, self-hosted video calls (Jitsi Meet), linkable from chat |
@@ -170,6 +182,75 @@ third-party admin UIs get replaced with ones we build ourselves, services
 get installed as-is. Image: `vegardit/openldap` — the once-dominant
 `osixia/openldap` has been unmaintained since 2021 and Bitnami's is now
 paywalled (same pattern as the MinIO situation above).
+
+## VPN and the office network
+
+The platform's own always-on NetBird peer, the **internal gateway**
+(`internal-gateway` in `docker-compose.yaml`), is what VPN users' traffic
+is routed through. It advertises:
+
+- **Always:** nginx's fixed edge address (`10.201.28.2/32`) — how
+  "private" modules are reached over the VPN.
+- **Optionally:** the office LAN (e.g. `192.168.1.0/24`), when an admin
+  turns on "VPN users can reach the office network" on the VPN page. The
+  subnet is auto-detected from the host's routing table and must be a
+  private range. With it on, a remote laptop or phone reaches office
+  computers, printers, file shares and the phone system as if it were
+  plugged in at the office. Off by default — with it off, VPN users reach
+  only other VPN devices and the platform's own private modules.
+
+Both routes are owned by `syncGatewayRoutes` (`internal/api/gateway.go`),
+which converges NetBird's routes to what they should be at VPN install,
+at **every backend start**, and on each settings save — so a route left
+pointing at an old address (e.g. after the edge subnet changed) is
+repaired automatically rather than staying broken.
+
+Note: NetBird's default access policy lets every VPN device reach every
+other one, so the office-network setting applies to all VPN users alike.
+
+## Phone system (voip)
+
+Two containers: **Asterisk** (the engine — Asterisk 20 LTS from Alpine's
+own package, only the ~60 modules it uses loaded, ~5 MiB RAM idle) and
+our own **voip** service, which stores extensions/settings in the shared
+Postgres, generates Asterisk's config files into a shared volume, and
+reloads Asterisk over its manager port (AMI). Admins manage it at `/voip`;
+employees see their own phone setup and a company directory at
+`/portal/phone`.
+
+What callers dial: an extension (e.g. `101`) for a colleague, `0` for the
+main number (rings everyone ticked for it, then a shared mailbox), `9` +
+number for an outside call (needs a SIP provider configured), `*97` for
+their voicemail, `*98` for the main mailbox, `*43` for an echo test.
+
+Things to know when deploying it:
+
+- **Ports:** Asterisk runs on the host's network (`network_mode: host`),
+  so UDP **5060** (SIP) and **20000–20999** (audio) must be free on the
+  server. Host networking is deliberate — behind Docker's NAT, SIP
+  advertises the container's internal address and calls connect with no
+  audio.
+- **It binds to the server's LAN IP**, detected at container start, not
+  `0.0.0.0`. The host sits on several networks (LAN + Docker bridges) and
+  a `0.0.0.0` UDP socket answers from whichever address the route picks —
+  VPN phones then got replies from the Docker-bridge address, which the
+  VPN gateway's NAT drops. Consequence: **give the server a fixed LAN IP**
+  (a DHCP reservation on the router); if its IP changes, restart the voip
+  module. `SERVER_IP` can be set explicitly on the asterisk container if
+  detection picks the wrong interface.
+- **Phones outside the office** work over the VPN once "VPN users can
+  reach the office network" is on (see above) — they register to the same
+  LAN IP as office phones.
+- **Security:** extensions may only register from private and VPN address
+  ranges, passwords are generated (32 hex chars), and international
+  outside calls are blocked unless an admin allows them.
+
+**Why Asterisk, not FreePBX:** FreePBX is a heavy PHP admin UI layered on
+Asterisk — exactly the kind of third-party admin UI this project replaces
+with its own. Plain Asterisk with generated config files is lighter and
+keeps our panel the only UI. FreeSWITCH was heavier and more complex for
+5–50 users; Kamailio/OpenSIPS are SIP proxies, not PBXs (no voicemail or
+call logic).
 
 ## Repo layout
 

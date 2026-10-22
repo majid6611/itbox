@@ -3,7 +3,9 @@ name: VPN (Netbird)
 description: >-
   Self-hosted WireGuard mesh VPN. Give a company user access with one
   click and hand them a setup file — no passwords or logins to configure,
-  just paste a code into the VPN app once. Works on its own, but the
+  just paste a code into the VPN app once. Optionally lets people on the
+  VPN reach the whole office network — computers, printers, file shares
+  and office phones — as if they were at the office. Works on its own, but the
   Identity (OpenLDAP) module is what gives you a list of company users to
   grant access to. Managed from this platform's own panel — Netbird's own
   dashboard is never installed.
