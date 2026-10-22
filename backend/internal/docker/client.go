@@ -128,6 +128,29 @@ func (c *Client) HostRoutes(ctx context.Context) (string, error) {
 	return out.String(), nil
 }
 
+// HostPrimaryIP returns the address this server uses on its main network —
+// the one office computers reach it at — read from the host's own routing
+// table. Services that hand their address to clients (a video bridge
+// telling browsers where to send media) can't see it from inside a
+// container, where they only know Docker's internal one.
+func (c *Client) HostPrimaryIP(ctx context.Context) (string, error) {
+	run := func(args ...string) string {
+		cmd := exec.CommandContext(ctx, "docker", append([]string{"run", "--rm", "--network", "host", "busybox", "ip", "-4", "route"}, args...)...)
+		cmd.Env = safeEnv()
+		out, _ := cmd.Output()
+		return string(out)
+	}
+	for _, text := range []string{run("get", "1.1.1.1"), run()} {
+		fields := strings.Fields(text)
+		for i, f := range fields {
+			if f == "src" && i+1 < len(fields) {
+				return fields[i+1], nil
+			}
+		}
+	}
+	return "", fmt.Errorf("couldn't read this server's address from its routes")
+}
+
 // RestartContainer restarts a running container by name — e.g. to pick up
 // a config file that was just rewritten out-of-band.
 func (c *Client) RestartContainer(ctx context.Context, containerName string) error {

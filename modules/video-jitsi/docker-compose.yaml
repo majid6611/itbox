@@ -87,6 +87,11 @@ services:
       TZ: "UTC"
       JVB_AUTH_PASSWORD: ${jvb_auth_password}
       JVB_PORT: "10000"
+      # The server's own address (filled in by the platform). Without it the
+      # bridge tells browsers to send media to its Docker-internal address,
+      # which nobody outside this machine can reach: calls would connect
+      # and then show no picture and carry no sound.
+      JVB_ADVERTISE_IPS: ${HOST_IP}
     # The one component that can't go through the edge nginx — WebRTC
     # media is UDP, not HTTP. Published straight to the host, same
     # reasoning as vpn-netbird's STUN port (see that module's compose

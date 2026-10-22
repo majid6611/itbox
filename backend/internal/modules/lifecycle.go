@@ -438,6 +438,29 @@ func (m *Manager) Install(ctx context.Context, moduleID string, config map[strin
 		return err
 	}
 
+	// A module that was installed (or uninstalled) before keeps its data
+	// volumes, and those hold the old secrets: reuse them rather than
+	// generating new ones that the data no longer matches.
+	var previous []byte
+	if err := m.db.QueryRow(ctx, `SELECT config FROM installed_modules WHERE module_id = $1`, moduleID).Scan(&previous); err != nil {
+		_ = m.db.QueryRow(ctx, `SELECT config FROM module_config_archive WHERE module_id = $1`, moduleID).Scan(&previous)
+	}
+	if len(previous) > 0 {
+		old := map[string]string{}
+		if json.Unmarshal(previous, &old) == nil {
+			merged := make(map[string]string, len(old)+len(config))
+			for k, v := range old {
+				merged[k] = v
+			}
+			for k, v := range config {
+				if v != "" {
+					merged[k] = v
+				}
+			}
+			config = merged
+		}
+	}
+
 	_, err = m.db.Exec(ctx, `
 		INSERT INTO installed_modules (module_id, status, config, error_message)
 		VALUES ($1, 'installing', '{}', NULL)
@@ -471,6 +494,13 @@ func (m *Manager) doInstall(ctx context.Context, moduleID string, manifest *Mani
 	resolved["MODULE_VERSION"] = manifest.Version
 	if manifest.NeedsDatabase {
 		resolved["DATABASE_URL"] = m.databaseURL
+	}
+	if manifest.NeedsHostIP {
+		ip, err := m.docker.HostPrimaryIP(ctx)
+		if err != nil {
+			log.Printf("module %s: %v — installing without it", moduleID, err)
+		}
+		resolved["HOST_IP"] = ip
 	}
 	for _, field := range manifest.ConfigSchema {
 		v, ok := config[field.Key]
@@ -638,6 +668,14 @@ func (m *Manager) Uninstall(_ context.Context, moduleID string) error {
 	}
 	if err := os.RemoveAll(dataDir); err != nil {
 		return fmt.Errorf("remove rendered compose dir: %w", err)
+	}
+	// Volumes stay, so the secrets they were created with must too.
+	if _, err := m.db.Exec(ctx, `
+		INSERT INTO module_config_archive (module_id, config)
+		SELECT module_id, config FROM installed_modules WHERE module_id = $1
+		ON CONFLICT (module_id) DO UPDATE SET config = EXCLUDED.config, archived_at = now()
+	`, moduleID); err != nil {
+		return fmt.Errorf("keep module config: %w", err)
 	}
 	_, err = m.db.Exec(ctx, `DELETE FROM installed_modules WHERE module_id = $1`, moduleID)
 	return err

@@ -81,6 +81,11 @@ type Manifest struct {
 	// volumes that are only caches or regenerated at start are skipped.
 	BackupVolumes []string `yaml:"backup_volumes,omitempty" json:"-"`
 
+	// NeedsHostIP asks the platform to fill in HOST_IP: the server's own
+	// address on its main network, for services that must tell clients
+	// where to reach them (see video-jitsi).
+	NeedsHostIP bool `yaml:"needs_host_ip,omitempty" json:"-"`
+
 	// InternalPanel is a path in this platform's own frontend (e.g.
 	// "/users") shown as a "Manage" link when the module is running —
 	// for modules whose admin UI is a page we built ourselves rather

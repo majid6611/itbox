@@ -7,7 +7,7 @@ description: >-
   straight into the conversation, the same way sharing any other link
   already works there.
 category: collaboration
-version: "1.0.0"
+version: "1.0.1"
 compose_file: docker-compose.yaml
 # Jitsi's web frontend hardcodes wss:// for call signaling with no plain
 # HTTP fallback — confirmed by reading its own config template — so this
@@ -15,6 +15,7 @@ compose_file: docker-compose.yaml
 # doc comment in modules/manifest.go for what it actually gets you (a
 # self-signed cert, not a real one).
 needs_tls: true
+needs_host_ip: true
 routes:
   # The image's internal nginx listens on plain 80 (and 443 with a
   # self-signed cert we don't use) unless HTTP_PORT/HTTPS_PORT are passed
