@@ -171,8 +171,7 @@ async function applyModuleUpdate(id: string) {
               <router-link :to="m.internal_panel">Manage</router-link>
             </li>
             <li v-for="l in modules.links[m.id]" :key="l.name">
-              <a v-if="!isPrivate(m.id)" :href="linkUrl(l.hostname, m.needs_tls)" target="_blank" rel="noopener">{{ l.name || 'Open' }}</a>
-              <span v-else class="private-address">{{ l.name || 'Address' }} (VPN only)</span>
+              <a :href="linkUrl(l.hostname, m.needs_tls)" target="_blank" rel="noopener">{{ l.name || 'Open' }}</a>
             </li>
           </ul>
           <div v-if="statusFor(m.id) === 'running' && modules.links[m.id]?.length" class="address-box">
@@ -183,7 +182,7 @@ async function applyModuleUpdate(id: string) {
 
           <div v-if="statusFor(m.id) === 'running' && hasPrimaryRoute(m)" class="visibility">
             <span class="pill" :class="isPrivate(m.id) ? 'pill-neutral' : 'pill-warn'">
-              {{ isPrivate(m.id) ? 'Private (VPN only)' : 'Public (anyone who can reach this server)' }}
+              {{ isPrivate(m.id) ? 'Private (office network and VPN only)' : 'Public (anyone who can reach this server, including the internet)' }}
             </span>
             <button class="secondary" :disabled="busy[m.id]" @click="toggleVisibility(m.id)">
               {{ isPrivate(m.id) ? 'Make public' : 'Make private' }}

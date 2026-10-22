@@ -187,7 +187,10 @@ The platform's own always-on NetBird peer, the **internal gateway**
 is routed through. It advertises:
 
 - **Always:** nginx's fixed edge address (`10.201.28.2/32`) — how
-  "private" modules are reached over the VPN.
+  "private" modules are reached over the VPN. (Private modules are also
+  served at their normal hostname on the office network: the vhost only
+  admits private and VPN source addresses and refuses the internet. So
+  "private" means "not on the internet", not "VPN required".)
 - **Optionally:** the office LAN (e.g. `192.168.1.0/24`), when an admin
   turns on "VPN users can reach the office network" on the VPN page. The
   subnet is auto-detected from the host's routing table and must be a

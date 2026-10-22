@@ -7,7 +7,7 @@ description: >-
   straight into the conversation, the same way sharing any other link
   already works there.
 category: collaboration
-version: "1.0.3"
+version: "1.0.4"
 compose_file: docker-compose.yaml
 # Jitsi's web frontend hardcodes wss:// for call signaling with no plain
 # HTTP fallback — confirmed by reading its own config template — so this
@@ -19,9 +19,9 @@ needs_host_ip: true
 connect_note: >-
   There are no accounts or logins here: a call is just a room link. Start a
   call from Chat, or open this address and type a room name. It only works
-  over https (accept the certificate warning once). Set to Public, anyone who
-  can reach this server (the office network) can join; set to Private, only
-  people connected to the VPN can, even from inside the office.
+  over https (accept the certificate warning once). Set to Private,
+  only people on the office network or the VPN can join; set to Public,
+  anyone who can reach this server can.
 routes:
   # The image's internal nginx listens on plain 80 (and 443 with a
   # self-signed cert we don't use) unless HTTP_PORT/HTTPS_PORT are passed

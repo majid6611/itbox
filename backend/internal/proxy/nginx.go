@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 type nginxReloader interface {
@@ -93,6 +94,19 @@ func (m *Manager) pathRouteConfPath(moduleID string) string {
 // nginx/templates/upgrade-map.conf.template) is included unconditionally
 // here too: harmless for a plain-REST module, load-bearing for video-jitsi,
 // whose web frontend signals over a WebSocket to its XMPP server.
+// internalOnlyACL admits the office network, the VPN range and this machine
+// itself, and refuses every other (i.e. internet) address.
+const internalOnlyACL = `    allow 10.0.0.0/8;
+    allow 172.16.0.0/12;
+    allow 192.168.0.0/16;
+    allow 100.64.0.0/10;
+    allow 127.0.0.0/8;
+    allow fc00::/7;
+    allow ::1;
+    deny all;
+
+`
+
 func (m *Manager) SetRoutes(ctx context.Context, moduleID string, routes []RouteTarget) error {
 	for _, r := range routes {
 		var conf string
@@ -127,7 +141,9 @@ func (m *Manager) SetRoutes(ctx context.Context, moduleID string, routes []Route
     }
 }
 `, internalGatewayIP, r.PrivatePort, r.Upstream)
-		} else if r.TLS {
+		}
+		normal := ""
+		if r.TLS {
 			if _, _, err := m.ensureSelfSignedCert(moduleID, r.Hostname); err != nil {
 				return fmt.Errorf("ensure tls cert for %s/%s: %w", moduleID, r.Name, err)
 			}
@@ -145,7 +161,7 @@ func (m *Manager) SetRoutes(ctx context.Context, moduleID string, routes []Route
 			// just the connections that happen to ask for it, since e.g.
 			// video-jitsi's own JS assumes every request already got the
 			// same origin's real scheme.
-			conf = fmt.Sprintf(`server {
+			normal = fmt.Sprintf(`server {
     listen 80;
     server_name %[1]s;
     return 301 https://$host$request_uri;
@@ -187,7 +203,7 @@ server {
 			// (module container removed outside the API) would take down routing
 			// for every module, including the platform UI. The lazy form just
 			// 502s that one route instead.
-			conf = fmt.Sprintf(`server {
+			normal = fmt.Sprintf(`server {
     listen 80;
     server_name %s;
 
@@ -218,6 +234,14 @@ server {
 }
 `, r.Hostname, r.Upstream)
 		}
+		if r.PrivatePort != 0 {
+			// Private means "not on the internet", not "VPN only": the same
+			// hostname also answers on the office network, but only to
+			// private/VPN addresses. (The VPN path above is kept for people
+			// who reach the server through the VPN gateway by port.)
+			normal = strings.Replace(normal, "    resolver 127.0.0.11 valid=10s;", internalOnlyACL+"    resolver 127.0.0.11 valid=10s;", 1)
+		}
+		conf += normal
 
 		if err := os.WriteFile(m.confPath(moduleID, r.Name), []byte(conf), 0o644); err != nil {
 			return fmt.Errorf("write nginx vhost for %s/%s: %w", moduleID, r.Name, err)
