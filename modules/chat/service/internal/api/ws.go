@@ -1,6 +1,9 @@
 package api
 
-import "net/http"
+import (
+	"context"
+	"net/http"
+)
 
 // handleWebSocket sits outside huma (see router.go) since it needs the raw
 // http.ResponseWriter/Request to hand to the websocket library's upgrade
@@ -19,5 +22,9 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not authenticated", http.StatusUnauthorized)
 		return
 	}
-	s.Hub.Serve(w, r, username)
+	token := cookie.Value
+	s.Hub.Serve(w, r, username, func(ctx context.Context) bool {
+		_, err := s.requireEmployeeAuth(ctx, token)
+		return err == nil
+	})
 }

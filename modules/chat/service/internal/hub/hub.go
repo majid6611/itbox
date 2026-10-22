@@ -50,16 +50,16 @@ type GroupInvite struct {
 }
 
 type Message struct {
-	ID                 int64       `json:"id"`
-	SenderUsername     string      `json:"sender_username"`
-	GroupName          string      `json:"group_name,omitempty"`
-	RecipientUsername  string      `json:"recipient_username,omitempty"`
-	CustomGroupID      int64       `json:"custom_group_id,omitempty"`
-	Content            string      `json:"content"`
-	CreatedAt          string      `json:"created_at"`
-	EditedAt           string      `json:"edited_at,omitempty"`
-	DeletedAt          string      `json:"deleted_at,omitempty"`
-	Attachment         *Attachment `json:"attachment,omitempty"`
+	ID                int64       `json:"id"`
+	SenderUsername    string      `json:"sender_username"`
+	GroupName         string      `json:"group_name,omitempty"`
+	RecipientUsername string      `json:"recipient_username,omitempty"`
+	CustomGroupID     int64       `json:"custom_group_id,omitempty"`
+	Content           string      `json:"content"`
+	CreatedAt         string      `json:"created_at"`
+	EditedAt          string      `json:"edited_at,omitempty"`
+	DeletedAt         string      `json:"deleted_at,omitempty"`
+	Attachment        *Attachment `json:"attachment,omitempty"`
 }
 
 type Attachment struct {
@@ -173,7 +173,12 @@ func (h *Hub) unregister(c *conn) bool {
 // Serve upgrades the request to a WebSocket for username and runs the
 // connection until it dies (client close, network failure, or a missed
 // heartbeat). Blocks until then — call in its own goroutine per request.
-func (h *Hub) Serve(w http.ResponseWriter, r *http.Request, username string) {
+// Serve runs one WebSocket connection. stillValid is asked on every ping
+// tick whether the person behind it should still be connected (their
+// session exists); once it says no — they were disabled or deleted, or their
+// password was reset — the connection is closed, instead of carrying on
+// receiving other people's messages for as long as the tab stays open.
+func (h *Hub) Serve(w http.ResponseWriter, r *http.Request, username string, stillValid func(context.Context) bool) {
 	ws, err := websocket.Accept(w, r, nil)
 	if err != nil {
 		return
@@ -195,6 +200,12 @@ func (h *Hub) Serve(w http.ResponseWriter, r *http.Request, username string) {
 				if !ok {
 					return
 				}
+				// Checked per message too, not just on the ping: otherwise a
+				// disabled person would keep receiving for up to a ping interval.
+				if !stillValid(r.Context()) {
+					ws.Close(websocket.StatusPolicyViolation, "session ended")
+					return
+				}
 				wctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 				err := ws.Write(wctx, websocket.MessageText, data)
 				cancel()
@@ -203,6 +214,10 @@ func (h *Hub) Serve(w http.ResponseWriter, r *http.Request, username string) {
 					return
 				}
 			case <-ticker.C:
+				if !stillValid(r.Context()) {
+					ws.Close(websocket.StatusPolicyViolation, "session ended")
+					return
+				}
 				pctx, cancel := context.WithTimeout(r.Context(), pingTimeout)
 				err := ws.Ping(pctx)
 				cancel()
