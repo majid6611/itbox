@@ -4,6 +4,8 @@ import (
 	"context"
 	"log"
 	"net/url"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -116,6 +118,52 @@ func validVideoCallURL(raw string) bool {
 // calling employee's own calendar, derived from their session, never a
 // client-supplied username, so there's no way to reach anyone else's
 // personal calendar through this endpoint.
+var attendeeName = regexp.MustCompile(`^[A-Za-z0-9._-]{1,64}$`)
+
+// cleanEventBody normalises and validates what an employee submitted before
+// it is turned into an iCalendar file: a title is one line (the format
+// can't hold a line break there, and passing one through used to fail
+// with a server error), attendees are plain usernames, and a timed event
+// has to end after it starts.
+func cleanEventBody(b *CalendarEventBody) error {
+	b.Title = strings.TrimSpace(strings.NewReplacer("\r\n", " ", "\n", " ", "\r", " ").Replace(b.Title))
+	if b.Title == "" {
+		return huma.Error400BadRequest("title is required")
+	}
+	if !validVideoCallURL(b.VideoCallURL) {
+		return huma.Error400BadRequest("video call link must be a plain http(s) URL")
+	}
+	if !b.AllDay && !b.End.After(b.Start) {
+		return huma.Error400BadRequest("the event has to end after it starts")
+	}
+	for _, a := range b.Attendees {
+		if !attendeeName.MatchString(a) {
+			return huma.Error400BadRequest("attendees must be company usernames")
+		}
+	}
+	return nil
+}
+
+// requireEventEditor lets anyone change their own personal events, but a
+// company-calendar event only its creator — the creator is recorded on
+// every event made here, and without this check the API ignored it. An
+// event with no recorded creator (made from a phone's calendar app)
+// stays open to everyone, as before. Returns 404 for an event that isn't
+// there.
+func requireEventEditor(ctx context.Context, baseURL, password, calendar, path, uid, username string) error {
+	existing, err := caldavclient.GetEvent(ctx, baseURL, radicalefs.ServiceAccount, password, path, uid)
+	if err != nil {
+		return internalError("look up event", err)
+	}
+	if existing == nil {
+		return huma.Error404NotFound("no such event")
+	}
+	if calendar == "company" && existing.CreatedBy != "" && existing.CreatedBy != username {
+		return huma.Error403Forbidden("only the person who created this event can change or delete it")
+	}
+	return nil
+}
+
 func calendarPathFor(kind, username string) (path string, ok bool) {
 	switch kind {
 	case "company":
@@ -308,11 +356,8 @@ func registerCalendar(api huma.API, s *Server) {
 		if !ok {
 			return nil, huma.Error400BadRequest(`calendar must be "company" or "personal"`)
 		}
-		if in.Body.Title == "" {
-			return nil, huma.Error400BadRequest("title is required")
-		}
-		if !validVideoCallURL(in.Body.VideoCallURL) {
-			return nil, huma.Error400BadRequest("video call link must be a plain http(s) URL")
+		if err := cleanEventBody(&in.Body); err != nil {
+			return nil, err
 		}
 		uid := uuid.NewString()
 		ev := caldavclient.Event{
@@ -349,11 +394,11 @@ func registerCalendar(api huma.API, s *Server) {
 		if !ok {
 			return nil, huma.Error400BadRequest(`calendar must be "company" or "personal"`)
 		}
-		if in.Body.Title == "" {
-			return nil, huma.Error400BadRequest("title is required")
+		if err := cleanEventBody(&in.Body); err != nil {
+			return nil, err
 		}
-		if !validVideoCallURL(in.Body.VideoCallURL) {
-			return nil, huma.Error400BadRequest("video call link must be a plain http(s) URL")
+		if err := requireEventEditor(ctx, baseURL, password, in.Calendar, path, in.UID, username); err != nil {
+			return nil, err
 		}
 		// PUT replaces the whole resource, so the original creator has to
 		// be read back first or it's lost — falls back to whoever's
@@ -396,6 +441,9 @@ func registerCalendar(api huma.API, s *Server) {
 		path, ok := calendarPathFor(in.Calendar, username)
 		if !ok {
 			return nil, huma.Error400BadRequest(`calendar must be "company" or "personal"`)
+		}
+		if err := requireEventEditor(ctx, baseURL, password, in.Calendar, path, in.UID, username); err != nil {
+			return nil, err
 		}
 		if err := caldavclient.DeleteEvent(ctx, baseURL, radicalefs.ServiceAccount, password, path, in.UID); err != nil {
 			return nil, internalError("delete event", err)
