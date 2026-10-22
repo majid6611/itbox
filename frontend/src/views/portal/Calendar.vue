@@ -491,8 +491,9 @@ h1 {
 }
 .legend {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 1.25rem;
+  gap: 0.5rem 1.25rem;
   margin-bottom: 0.85rem;
   font-size: 0.85rem;
   color: var(--text-dim);
@@ -510,6 +511,7 @@ h1 {
 }
 .subscribe-toggle {
   margin-left: auto;
+  white-space: normal;
   font-size: 0.82rem;
 }
 .subscribe-card {

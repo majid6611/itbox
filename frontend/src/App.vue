@@ -219,4 +219,27 @@ main {
   max-width: 72rem;
   margin: 0 auto;
 }
+
+/* Phones: the bar becomes two rows (brand + account, then the nav, which
+ * scrolls sideways if it must) instead of one row wider than the screen. */
+@media (max-width: 700px) {
+  .topbar {
+    flex-wrap: wrap;
+    gap: 0.5rem 0.75rem;
+    padding: 0.6rem 0.9rem;
+  }
+  .topbar .account {
+    margin-left: auto;
+    gap: 0.5rem;
+  }
+  .topbar nav {
+    order: 3;
+    flex-basis: 100%;
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+  main {
+    padding: 1rem 0.9rem;
+  }
+}
 </style>

@@ -617,4 +617,19 @@ watch(
   padding: 0;
   margin: 0 0 0.5rem;
 }
+
+/* Phones: the page tree stacks above the page instead of beside it. */
+@media (max-width: 700px) {
+  .wiki-layout {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 1rem;
+  }
+  .sidebar {
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    padding: 0 0 0.75rem;
+  }
+}
 </style>

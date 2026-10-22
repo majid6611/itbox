@@ -647,4 +647,32 @@ onMounted(async () => {
   font-size: 0.8rem;
   color: var(--text-faint);
 }
+
+/* Phones: the people/channels list goes on top as a short scrolling strip,
+ * and the conversation gets the full width below it. */
+@media (max-width: 700px) {
+  .chat-layout {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.75rem;
+    height: calc(100vh - 7rem);
+  }
+  .sidebar {
+    width: 100%;
+    height: auto;
+    max-height: 8.5rem;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    padding: 0 0 0.5rem;
+  }
+  .thread-pane {
+    flex: 1;
+    min-height: 0;
+    height: auto;
+  }
+  .thread-header {
+    flex-wrap: wrap;
+    gap: 0.35rem 0.75rem;
+  }
+}
 </style>

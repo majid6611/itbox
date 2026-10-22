@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
@@ -116,6 +117,33 @@ func (s *Server) wikiPageAccess(ctx context.Context, pageID int, userGroup strin
 		return true, nil // any rule for this group grants at least read
 	}
 	return !hasAnyRule, nil
+}
+
+// cleanPagePath normalises a page path and rejects ones that would make a
+// confusing tree: empty or "."/".." segments ("a//b", "../x"), control
+// characters, or absurd lengths.
+func cleanPagePath(raw string) (string, error) {
+	path := strings.Trim(strings.TrimSpace(raw), "/")
+	if path == "" {
+		return "", huma.Error400BadRequest("page path can't be empty")
+	}
+	if len(path) > 300 {
+		return "", huma.Error400BadRequest("page path is too long")
+	}
+	for _, seg := range strings.Split(path, "/") {
+		if strings.TrimSpace(seg) == "" || seg == "." || seg == ".." {
+			return "", huma.Error400BadRequest(`page path can't contain empty, "." or ".." parts`)
+		}
+		if len(seg) > 100 {
+			return "", huma.Error400BadRequest("a part of the page path is too long (100 characters max)")
+		}
+		for _, r := range seg {
+			if r < 0x20 || r == 0x7f {
+				return "", huma.Error400BadRequest("page path can't contain control characters")
+			}
+		}
+	}
+	return path, nil
 }
 
 func (s *Server) getPageByPath(ctx context.Context, path string) (id int, title string, ok bool, err error) {

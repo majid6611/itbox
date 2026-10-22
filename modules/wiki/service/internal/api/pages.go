@@ -181,9 +181,9 @@ func registerWiki(api huma.API, s *Server) {
 		if err != nil {
 			return nil, err
 		}
-		path := strings.Trim(strings.TrimSpace(in.Body.Path), "/")
-		if path == "" {
-			return nil, huma.Error400BadRequest("page path can't be empty")
+		path, err := cleanPagePath(in.Body.Path)
+		if err != nil {
+			return nil, err
 		}
 		if in.Body.Title == "" {
 			return nil, huma.Error400BadRequest("page title can't be empty")
@@ -371,9 +371,9 @@ func registerWiki(api huma.API, s *Server) {
 		if err != nil {
 			return nil, err
 		}
-		newPath := strings.Trim(strings.TrimSpace(in.Body.NewPath), "/")
-		if newPath == "" {
-			return nil, huma.Error400BadRequest("new path can't be empty")
+		newPath, err := cleanPagePath(in.Body.NewPath)
+		if err != nil {
+			return nil, err
 		}
 		group, _ := s.employeeGroup(ctx, username)
 
