@@ -20,11 +20,11 @@ const webdavBackupNetwork = "it-platform-edge"
 
 type BackupConfig struct {
 	Destination        string `json:"destination"` // "local" or "aws"
-	AWSAccessKeyID      string `json:"aws_access_key_id"`
-	AWSSecretAccessKey  string `json:"aws_secret_access_key"`
-	AWSBucket           string `json:"aws_bucket"`
-	AWSRegion           string `json:"aws_region"`
-	Schedule            string `json:"schedule"` // "off", "daily", "weekly"
+	AWSAccessKeyID     string `json:"aws_access_key_id"`
+	AWSSecretAccessKey string `json:"aws_secret_access_key"`
+	AWSBucket          string `json:"aws_bucket"`
+	AWSRegion          string `json:"aws_region"`
+	Schedule           string `json:"schedule"` // "off", "daily", "weekly"
 }
 
 func (s *Server) getBackupConfig(ctx context.Context) (BackupConfig, error) {

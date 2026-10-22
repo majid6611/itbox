@@ -57,6 +57,8 @@ export interface ModuleUpdate {
   severity: UpdateSeverity
   changelog: string
   new: boolean
+  status?: 'updating' | 'failed'
+  message?: string
 }
 
 export interface ModulesResponse {

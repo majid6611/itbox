@@ -309,6 +309,8 @@ func registerModules(api huma.API, s *Server) {
 		if _, err := s.requireAuth(ctx, in.SessionToken); err != nil {
 			return nil, err
 		}
+		// Returns as soon as the update has started; its progress and result
+		// show up on the module's update entry in GET /api/modules.
 		if err := s.Modules.ApplyUpdate(ctx, in.ID); err != nil {
 			return nil, huma.Error400BadRequest("update failed", err)
 		}

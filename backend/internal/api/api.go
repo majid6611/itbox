@@ -140,7 +140,7 @@ func internalError(msg string, err error) huma.StatusError {
 
 // requireAuth validates a session cookie value, returning the admin's
 // email or a 401 huma error. Protected endpoint Input structs should embed
-// a `SessionToken string `cookie:"itp_session"`` field and call this first.
+// a `SessionToken string `cookie:"itp_session"“ field and call this first.
 func (s *Server) requireAuth(ctx context.Context, sessionToken string) (string, error) {
 	if sessionToken == "" {
 		return "", huma.Error401Unauthorized("not authenticated")

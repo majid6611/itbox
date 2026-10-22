@@ -3,7 +3,6 @@ package api
 import (
 	"context"
 	"fmt"
-	"strings"
 	"syscall"
 	"time"
 
@@ -31,34 +30,16 @@ type HealthReportOutput struct {
 // right now, not by the status we recorded at install — a crashed
 // container still reads "running" in our own table.
 func (s *Server) moduleHealth(ctx context.Context, id, name string) HealthCheck {
-	check := HealthCheck{Name: name, Status: "ok", Detail: "Running"}
-	containers, err := s.Docker.ProjectContainers(ctx, s.Modules.ProjectName(id))
-	if err != nil {
+	ok, detail, err := s.Modules.Health(ctx, id)
+	switch {
+	case err != nil:
 		return HealthCheck{Name: name, Status: "warn", Detail: "Couldn't check: " + err.Error()}
-	}
-	if len(containers) == 0 {
+	case !ok && detail == "no containers":
 		return HealthCheck{Name: name, Status: "bad", Detail: "Not running"}
+	case !ok:
+		return HealthCheck{Name: name, Status: "bad", Detail: detail}
 	}
-	var problems []string
-	for _, c := range containers {
-		switch {
-		case c.State == "running" && c.Health != "unhealthy":
-		case c.State == "exited" && c.ExitCode == 0 && c.OneShot:
-			// A one-shot setup step that finished, not a failure.
-		default:
-			what := c.State
-			if c.State == "running" {
-				what = "unhealthy"
-			} else if c.State == "exited" {
-				what = fmt.Sprintf("stopped (exit %d)", c.ExitCode)
-			}
-			problems = append(problems, c.Name+": "+what)
-		}
-	}
-	if len(problems) > 0 {
-		check.Status, check.Detail = "bad", strings.Join(problems, "; ")
-	}
-	return check
+	return HealthCheck{Name: name, Status: "ok", Detail: "Running"}
 }
 
 func (s *Server) diskHealth() HealthCheck {

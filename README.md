@@ -294,6 +294,16 @@ A version change must never delete customer data. Four rules enforce it:
   `-- allow-destructive: <why no data is lost>` line. Prefer adding columns
   and tables; keep the old ones until a later version has stopped using them.
 
+**Module updates** add three more steps. Before replacing anything the
+platform keeps a copy of the module's current files and of its data volumes
+(`data/snapshots/module-files`, `data/snapshots/volumes`), alongside the
+database snapshot. After restarting on the new version it waits for every
+container to stay healthy; if they don't, the old files are put back and
+the old version is started again, and the Module Store shows why. The
+database is **not** rolled back automatically — that would erase what users
+saved meanwhile — which is safe because migrations only add, so the old
+version runs on the newer schema. Restoring a snapshot is a manual choice.
+
 Never bump the pinned `postgres:16` image casually: a major Postgres
 version can't open the previous version's data directory.
 

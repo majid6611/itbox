@@ -6,10 +6,10 @@ import (
 )
 
 type Config struct {
-	ListenAddr    string
-	DatabaseURL   string
-	ModulesDir    string
-	DataDir       string
+	ListenAddr  string
+	DatabaseURL string
+	ModulesDir  string
+	DataDir     string
 	// SnapshotDir is where safety dumps of the database are kept (before
 	// upgrades and restores). Must be on persistent storage.
 	SnapshotDir   string

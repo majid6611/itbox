@@ -3,11 +3,10 @@ package modules
 import (
 	"context"
 	"fmt"
-	"path/filepath"
+	"log"
 	"strconv"
 	"strings"
 
-	"it-platform/backend/internal/db"
 	"it-platform/backend/internal/registryclient"
 )
 
@@ -28,6 +27,11 @@ type UpdateInfo struct {
 	// there) — the Module Store shows these as newly available rather
 	// than as an update badge on an existing row.
 	New bool `json:"new"`
+	// Status is "updating" while an update is being applied, "failed" if
+	// the last attempt didn't take (Message says why, and that the old
+	// version is back); empty otherwise.
+	Status  string `json:"status,omitempty"`
+	Message string `json:"message,omitempty"`
 }
 
 // compareVersions compares dotted numeric version strings ("1.2.0" etc.)
@@ -95,8 +99,12 @@ func (m *Manager) CheckForUpdates(ctx context.Context) ([]UpdateInfo, error) {
 
 	m.updatesMu.Lock()
 	m.updateEntries = next
+	prev := m.updates
 	m.updates = make(map[string]UpdateInfo, len(found))
 	for _, u := range found {
+		if p, ok := prev[u.ModuleID]; ok {
+			u.Status, u.Message = p.Status, p.Message
+		}
 		m.updates[u.ModuleID] = u
 	}
 	m.updatesMu.Unlock()
@@ -141,46 +149,37 @@ func (m *Manager) ApplyUpdate(ctx context.Context, moduleID string) error {
 	if err != nil {
 		return err
 	}
-	defer done()
+	m.setUpdateState(moduleID, "updating", "")
 
-	// A module that shares the platform database migrates it when its new
-	// version starts. Keep a way back first, and don't update without one.
-	if old, ok := m.registry.Get(moduleID); ok && old.NeedsDatabase {
-		if _, err := db.Snapshot(ctx, m.databaseURL, m.SnapshotDir, "before-update-"+moduleID); err != nil {
-			return fmt.Errorf("not updating: couldn't take a safety snapshot of the database first: %w", err)
+	// Runs on its own context: a browser or proxy giving up on the request
+	// must never cut an update off half-way (or skip its rollback).
+	go func() {
+		defer done()
+		ctx, cancel := longOp()
+		defer cancel()
+		bundle, err := m.registryClient.DownloadBundle(ctx, entry.ID, entry.LatestVersion, entry.SHA256)
+		if err != nil {
+			err = fmt.Errorf("download module bundle: %w", err)
+		} else {
+			err = m.applyBundle(ctx, moduleID, bundle)
 		}
-	}
-
-	bundle, err := m.registryClient.DownloadBundle(ctx, entry.ID, entry.LatestVersion, entry.SHA256)
-	if err != nil {
-		return fmt.Errorf("download module bundle: %w", err)
-	}
-	destDir := filepath.Join(m.registry.modulesDir, moduleID)
-	if err := extractBundle(bundle, destDir); err != nil {
-		return fmt.Errorf("extract module bundle: %w", err)
-	}
-	if err := m.registry.Reload(); err != nil {
-		return fmt.Errorf("reload catalog: %w", err)
-	}
-
-	manifest, ok := m.registry.Get(moduleID)
-	if !ok {
-		return fmt.Errorf("module %q missing from catalog after extracting its bundle", moduleID)
-	}
-
-	status, installed, err := m.GetInstalled(ctx, moduleID)
-	if err != nil {
-		return fmt.Errorf("check install status: %w", err)
-	}
-	if installed && status.Status != "not_installed" {
-		if err := m.doInstall(ctx, moduleID, manifest, status.Config); err != nil {
-			return fmt.Errorf("bring module up on new version: %w", err)
+		if err != nil {
+			log.Printf("module update %s: %v", moduleID, err)
+			m.setUpdateState(moduleID, "failed", err.Error())
+			return
 		}
-	}
-
-	m.updatesMu.Lock()
-	delete(m.updates, moduleID)
-	m.updatesMu.Unlock()
-
+		m.updatesMu.Lock()
+		delete(m.updates, moduleID)
+		m.updatesMu.Unlock()
+	}()
 	return nil
+}
+
+func (m *Manager) setUpdateState(moduleID, status, message string) {
+	m.updatesMu.Lock()
+	defer m.updatesMu.Unlock()
+	if u, ok := m.updates[moduleID]; ok {
+		u.Status, u.Message = status, message
+		m.updates[moduleID] = u
+	}
 }

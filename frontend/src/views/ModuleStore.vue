@@ -87,6 +87,12 @@ async function applyModuleUpdate(id: string) {
   busy[id] = true
   try {
     await modules.applyUpdate(id)
+    // The update runs in the background (safety copies, restart, health
+    // check, and a rollback if it doesn't come up); follow it to the end.
+    while (modules.updates[id]?.status === 'updating') {
+      await new Promise((r) => setTimeout(r, 3000))
+      await modules.fetchAll()
+    }
   } finally {
     busy[id] = false
   }
@@ -116,8 +122,9 @@ async function applyModuleUpdate(id: string) {
           </span>
           <p class="changelog">{{ modules.updates[m.id].changelog }}</p>
           <button class="secondary" :disabled="busy[m.id]" @click="applyModuleUpdate(m.id)">
-            {{ busy[m.id] ? 'Updating…' : `Update to ${modules.updates[m.id].latest_version}` }}
+            {{ busy[m.id] || modules.updates[m.id].status === 'updating' ? 'Updating…' : `Update to ${modules.updates[m.id].latest_version}` }}
           </button>
+          <p v-if="modules.updates[m.id].status === 'failed'" class="update-failed">{{ modules.updates[m.id].message }}</p>
         </div>
 
         <div v-if="statusFor(m.id) === 'installing'" class="installing">
@@ -197,6 +204,11 @@ h1 {
   align-items: flex-start;
   justify-content: space-between;
   gap: 1rem;
+}
+.update-failed {
+  color: var(--danger-text);
+  font-size: 0.85rem;
+  margin: 0.5rem 0 0;
 }
 .update-notice {
   border: 1px solid var(--border);

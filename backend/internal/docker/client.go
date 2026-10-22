@@ -345,3 +345,23 @@ func (c *Client) output(ctx context.Context, args ...string) (string, error) {
 	}
 	return string(out), nil
 }
+
+// TarVolumeToFile writes a gzip tar of a volume to a file (owners and modes
+// kept) — the local safety copy taken before a module update.
+func (c *Client) TarVolumeToFile(ctx context.Context, volume, path string) error {
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	cmd := exec.CommandContext(ctx, "docker", "run", "--rm", "-v", volume+":/data:ro", "busybox", "tar", "czf", "-", "-C", "/data", ".")
+	cmd.Env = safeEnv()
+	cmd.Stdout = f
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		os.Remove(path)
+		return fmt.Errorf("tar volume %s: %w: %s", volume, err, strings.TrimSpace(stderr.String()))
+	}
+	return nil
+}
