@@ -183,7 +183,7 @@ async function applyModuleUpdate(id: string) {
 
           <div v-if="statusFor(m.id) === 'running' && hasPrimaryRoute(m)" class="visibility">
             <span class="pill" :class="isPrivate(m.id) ? 'pill-neutral' : 'pill-warn'">
-              {{ isPrivate(m.id) ? 'Private (VPN only)' : 'Public (on the internet)' }}
+              {{ isPrivate(m.id) ? 'Private (VPN only)' : 'Public (anyone who can reach this server)' }}
             </span>
             <button class="secondary" :disabled="busy[m.id]" @click="toggleVisibility(m.id)">
               {{ isPrivate(m.id) ? 'Make public' : 'Make private' }}
