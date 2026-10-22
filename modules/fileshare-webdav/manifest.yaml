@@ -5,7 +5,7 @@ description: >-
   macOS Finder, or Linux file managers. Runs over plain HTTP(S) so it works
   the same on the LAN or remotely, unlike SMB.
 category: storage
-version: "1.0.2"
+version: "1.0.3"
 compose_file: docker-compose.yaml
 config_schema:
   - key: admin_username
@@ -26,5 +26,6 @@ connect_note: >-
   This is the file server address. Open "Manage" for step-by-step
   instructions to connect from Windows, Mac, Linux and phones.
 internal_panel: /file-share
+address_kind: webdav
 backup_volumes:
   - webdav_config

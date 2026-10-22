@@ -17,7 +17,9 @@ function statusFor(id: string) {
 // Nginx's fixed address on the internal VPN gateway's advertised route —
 // see backend/internal/proxy/nginx.go's internalGatewayIP. Only means
 // anything to someone already connected to the platform's VPN.
-const INTERNAL_GATEWAY_IP = '172.28.0.2'
+// nginx's fixed address on the platform's internal network (see the backend's
+// internalGatewayIP) — what VPN devices without DNS connect to.
+const INTERNAL_GATEWAY_IP = '10.201.28.2'
 
 function hasPrimaryRoute(m: Manifest) {
   return m.routes?.some((r) => !r.name) ?? false
@@ -38,6 +40,15 @@ async function toggleVisibility(id: string) {
 
 function visibleFields(m: Manifest) {
   return m.config_schema.filter((f) => !f.hidden)
+}
+
+// The address as the program that connects to it wants it: a Linux file
+// browser needs dav:// (davs:// for https) where Windows and Mac take http://.
+function cardAddress(m: Manifest, hostname: string) {
+  const url = linkUrl(hostname, m.needs_tls)
+  const onLinux = /Linux/i.test(navigator.userAgent) && !/Android/i.test(navigator.userAgent)
+  if (m.address_kind === 'webdav' && onLinux) return url.replace(/^http/, 'dav') + '/'
+  return url
 }
 
 // A module that needs https is served on the standard https port, not on
@@ -170,13 +181,13 @@ async function applyModuleUpdate(id: string) {
             <li v-if="m.internal_panel">
               <router-link :to="m.internal_panel">Manage</router-link>
             </li>
-            <li v-for="l in modules.links[m.id]" :key="l.name">
+            <li v-for="l in modules.links[m.id]" v-show="m.address_kind !== 'webdav'" :key="l.name">
               <a :href="linkUrl(l.hostname, m.needs_tls)" target="_blank" rel="noopener">{{ l.name || 'Open' }}</a>
             </li>
           </ul>
           <div v-if="statusFor(m.id) === 'running' && modules.links[m.id]?.length" class="address-box">
             <span class="address-label">Address</span>
-            <code>{{ linkUrl(modules.links[m.id][0].hostname, m.needs_tls) }}</code>
+            <code>{{ cardAddress(m, modules.links[m.id][0].hostname) }}</code>
             <p v-if="m.connect_note" class="hint">{{ m.connect_note }}</p>
           </div>
 
@@ -188,7 +199,7 @@ async function applyModuleUpdate(id: string) {
               {{ isPrivate(m.id) ? 'Make public' : 'Make private' }}
             </button>
             <p v-if="isPrivate(m.id) && modules.statuses[m.id]?.private_port" class="hint">
-              Reachable once connected to the VPN at
+              Over the VPN it is also reachable at
               <code>{{ INTERNAL_GATEWAY_IP }}:{{ modules.statuses[m.id]?.private_port }}</code>
             </p>
           </div>

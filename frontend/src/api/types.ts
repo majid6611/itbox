@@ -34,6 +34,7 @@ export interface Manifest {
   routes?: ModuleRoute[]
   internal_panel?: string
   connect_note?: string
+  address_kind?: string
   needs_tls?: boolean
 }
 

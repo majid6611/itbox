@@ -86,6 +86,11 @@ type Manifest struct {
 	// program rather than just a web page (a file share, video calls).
 	ConnectNote string `yaml:"connect_note,omitempty" json:"connect_note,omitempty"`
 
+	// AddressKind says what kind of program connects to this module's
+	// address, so the Module Store can show it the way that program wants
+	// it ("webdav": dav:// in a Linux file browser, http:// elsewhere).
+	AddressKind string `yaml:"address_kind,omitempty" json:"address_kind,omitempty"`
+
 	// NeedsHostIP asks the platform to fill in HOST_IP: the server's own
 	// address on its main network, for services that must tell clients
 	// where to reach them (see video-jitsi).
