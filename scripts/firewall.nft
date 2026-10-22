@@ -1,0 +1,67 @@
+# Host firewall for the IT platform. Loaded by install-firewall.sh.
+#
+# The idea in one line: anything from the office network or the VPN is
+# trusted; anything from the internet may only reach the few ports that
+# remote users actually need. The phone system (SIP/RTP), the admin
+# tooling and every other port are reachable from inside only.
+#
+# Two hooks are needed because Docker works around a normal host firewall:
+# `input` guards services on the host's own network (the phone system runs
+# there), `forward` guards published container ports (443, 8090, ...).
+# Priority -10 runs before Docker's own rules; our drops stand whatever
+# Docker accepts afterwards.
+
+table inet itbox_fw
+delete table inet itbox_fw
+
+table inet itbox_fw {
+	# Private ranges, the VPN's range (100.64/10), loopback, link-local.
+	set internal4 {
+		type ipv4_addr
+		flags interval
+		elements = { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16,
+		             100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16 }
+	}
+	set internal6 {
+		type ipv6_addr
+		flags interval
+		elements = { ::1, fc00::/7, fe80::/10 }
+	}
+
+	# Open to the internet. To open or close a port, edit these two sets
+	# and run install-firewall.sh again.
+	#   tcp: 22 ssh, 80 + 8000 web panel, 443 https, 8090 VPN control
+	#   udp: 3478 VPN relay, 10000 video calls
+	set public_tcp {
+		type inet_service
+		elements = { 22, 80, 443, 8000, 8090 }
+	}
+	set public_udp {
+		type inet_service
+		elements = { 3478, 10000 }
+	}
+
+	chain input {
+		type filter hook input priority -10; policy accept;
+		ct state established,related accept
+		iifname "lo" accept
+		ip saddr @internal4 accept
+		ip6 saddr @internal6 accept
+		meta l4proto { icmp, ipv6-icmp } accept
+		meta l4proto tcp tcp dport @public_tcp accept
+		meta l4proto udp udp dport @public_udp accept
+		drop
+	}
+
+	chain forward {
+		type filter hook forward priority -10; policy accept;
+		ct state established,related accept
+		ip saddr @internal4 accept
+		ip6 saddr @internal6 accept
+		# After Docker's port mapping the destination is the container's
+		# own port, so judge by the port the client actually dialed.
+		ct status dnat meta l4proto tcp ct original proto-dst @public_tcp accept
+		ct status dnat meta l4proto udp ct original proto-dst @public_udp accept
+		ct status dnat drop
+	}
+}

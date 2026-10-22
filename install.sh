@@ -82,7 +82,21 @@ EOF
 fi
 echo
 
-# --- 3. Start ----------------------------------------------------------------
+# --- 3. Firewall -------------------------------------------------------------
+if command -v systemctl >/dev/null 2>&1; then
+  echo "-- Firewall --"
+  echo "Recommended: the office network and VPN keep full access; the internet"
+  echo "can only reach the web panel, VPN and video-call ports. Keeps the phone"
+  echo "system and everything else off the internet. (Asks for your password.)"
+  read -r -p "Install the firewall? [Y/n] " fw
+  fw=${fw:-Y}
+  if [[ "$fw" =~ ^[Yy] ]]; then
+    "$REPO_ROOT/scripts/install-firewall.sh"
+  fi
+  echo
+fi
+
+# --- 4. Start ----------------------------------------------------------------
 echo "Starting the platform (this pulls/builds images the first time, which"
 echo "can take a few minutes)..."
 docker compose up -d

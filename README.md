@@ -252,6 +252,28 @@ keeps our panel the only UI. FreeSWITCH was heavier and more complex for
 5–50 users; Kamailio/OpenSIPS are SIP proxies, not PBXs (no voicemail or
 call logic).
 
+## Firewall
+
+`install.sh` offers to install a host firewall (`scripts/firewall.nft`,
+loaded at boot by `scripts/install-firewall.sh`). One rule: the office
+network and the VPN are trusted; the internet can only reach the ports
+remote users need — SSH, the web panel (80/443/8000), the VPN (8090,
+3478/udp) and video calls (10000/udp). Everything else, notably the phone
+system's SIP and audio ports, answers to inside addresses only.
+
+It needs two hooks because Docker bypasses a normal host firewall:
+`input` guards services on the host's own network (Asterisk), `forward`
+guards published container ports, judged by the port the client dialed
+rather than the container's internal one. To open or close a port, edit
+the two `public_*` sets in `firewall.nft` and re-run
+`scripts/install-firewall.sh`. Remove it with
+`sudo systemctl disable --now itbox-firewall`.
+
+Caveat: an outside SIP trunk provider that dials *in* without our server
+registering to it first (IP-authenticated) is blocked too — add its address
+to `internal4`, or open 5060/udp and the RTP range, if a customer needs
+that.
+
 ## Repo layout
 
 ```
