@@ -546,6 +546,11 @@ func registerUsers(api huma.API, s *Server) {
 		if !available {
 			return nil, huma.Error400BadRequest("install the Identity module first")
 		}
+		if nb, ok, err := s.netbirdClient(ctx); err == nil && ok {
+			if err := s.revokeVpnAccess(ctx, nb, in.Username); err != nil {
+				log.Printf("revoke vpn access for deleted user %s: %v", in.Username, err)
+			}
+		}
 		// OpenLDAP doesn't automatically clean up a group's `member`
 		// reference when the member entry is deleted (verified: refint is
 		// loaded but not configured for this attribute) — do it ourselves
@@ -608,6 +613,11 @@ func registerUsers(api huma.API, s *Server) {
 		}
 		if err := s.removeCalendarLogin(ctx, in.Username); err != nil {
 			log.Printf("remove calendar login for disabled user %s: %v", in.Username, err)
+		}
+		if nb, ok, err := s.netbirdClient(ctx); err == nil && ok {
+			if err := s.revokeVpnAccess(ctx, nb, in.Username); err != nil {
+				log.Printf("revoke vpn access for disabled user %s: %v", in.Username, err)
+			}
 		}
 		if _, err := s.DB.Exec(ctx, `INSERT INTO disabled_users (username) VALUES ($1) ON CONFLICT DO NOTHING`, in.Username); err != nil {
 			return nil, internalError("record disabled state", err)

@@ -92,13 +92,16 @@ type SetupKey struct {
 // CreateSetupKey issues a reusable enrollment token — pasted into the
 // NetBird client app once, no browser login needed. name is just a label
 // (we use the LDAP username) shown in NetBird's own records.
-func (c *Client) CreateSetupKey(ctx context.Context, name string) (*SetupKey, error) {
+//
+// groupIDs are the groups every device enrolled with this key joins, which
+// is the only way to tell afterwards whose device is whose (see Peer).
+func (c *Client) CreateSetupKey(ctx context.Context, name string, groupIDs []string) (*SetupKey, error) {
 	var out SetupKey
 	err := c.do(ctx, http.MethodPost, "/api/setup-keys", map[string]any{
 		"name":        name,
 		"type":        "reusable",
 		"expires_in":  2592000, // 30 days; re-enabling issues a fresh one
-		"auto_groups": []string{},
+		"auto_groups": groupIDs,
 		"usage_limit": 0,
 	}, &out)
 	if err != nil {
@@ -122,6 +125,31 @@ type Peer struct {
 	Connected bool   `json:"connected"`
 	LastSeen  string `json:"last_seen"`
 	OS        string `json:"os"`
+	// Groups is how a device is tied back to a user: enrolling with that
+	// user's setup key puts it in their personal group.
+	Groups []Group `json:"groups"`
+}
+
+func (c *Client) DeletePeer(ctx context.Context, id string) error {
+	if err := c.do(ctx, http.MethodDelete, "/api/peers/"+id, nil, nil); err != nil {
+		return fmt.Errorf("delete peer: %w", err)
+	}
+	return nil
+}
+
+func (c *Client) CreateGroup(ctx context.Context, name string) (*Group, error) {
+	var out Group
+	if err := c.do(ctx, http.MethodPost, "/api/groups", map[string]any{"name": name}, &out); err != nil {
+		return nil, fmt.Errorf("create group: %w", err)
+	}
+	return &out, nil
+}
+
+func (c *Client) DeleteGroup(ctx context.Context, id string) error {
+	if err := c.do(ctx, http.MethodDelete, "/api/groups/"+id, nil, nil); err != nil {
+		return fmt.Errorf("delete group: %w", err)
+	}
+	return nil
 }
 
 // ListPeers returns every device currently enrolled — NOT attributable to

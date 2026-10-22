@@ -133,6 +133,72 @@ type EnableVpnOutput struct {
 	}
 }
 
+// userVpnGroup finds (or, with create, makes) the personal NetBird group
+// every device enrolled with a user's setup key joins. NetBird doesn't say
+// which key enrolled a peer, so this group is the only record of whose
+// device is whose.
+func userVpnGroup(ctx context.Context, nb *netbird.Client, username string, create bool) (string, error) {
+	name := "user-" + username
+	groups, err := nb.ListGroups(ctx)
+	if err != nil {
+		return "", err
+	}
+	for _, g := range groups {
+		if g.Name == name {
+			return g.ID, nil
+		}
+	}
+	if !create {
+		return "", nil
+	}
+	g, err := nb.CreateGroup(ctx, name)
+	if err != nil {
+		return "", err
+	}
+	return g.ID, nil
+}
+
+// revokeVpnAccess takes a user's VPN away completely: the enrollment key
+// (no new devices), then every device already enrolled with it (kicked off
+// the network now, not whenever they next reconnect). Devices enrolled
+// before groups existed have no group and can only be removed by hand in
+// NetBird. Safe to call for a user with no VPN access.
+func (s *Server) revokeVpnAccess(ctx context.Context, nb *netbird.Client, username string) error {
+	var keyID string
+	if err := s.DB.QueryRow(ctx, `SELECT setup_key_id FROM vpn_access WHERE username = $1`, username).Scan(&keyID); err == nil {
+		if err := nb.DeleteSetupKey(ctx, keyID); err != nil {
+			log.Printf("delete setup key for %s: %v", username, err)
+		}
+	}
+
+	groupID, err := userVpnGroup(ctx, nb, username, false)
+	if err != nil {
+		return err
+	}
+	if groupID != "" {
+		peers, err := nb.ListPeers(ctx)
+		if err != nil {
+			return err
+		}
+		for _, p := range peers {
+			for _, g := range p.Groups {
+				if g.ID == groupID {
+					if err := nb.DeletePeer(ctx, p.ID); err != nil {
+						return err
+					}
+					break
+				}
+			}
+		}
+		if err := nb.DeleteGroup(ctx, groupID); err != nil {
+			log.Printf("delete vpn group for %s: %v", username, err)
+		}
+	}
+
+	_, err = s.DB.Exec(ctx, `DELETE FROM vpn_access WHERE username = $1`, username)
+	return err
+}
+
 func registerVpn(api huma.API, s *Server) {
 	huma.Register(api, huma.Operation{
 		OperationID: "list-vpn-users",
@@ -208,7 +274,11 @@ func registerVpn(api huma.API, s *Server) {
 		if !available {
 			return nil, huma.Error400BadRequest("install the VPN module first (or it's still finishing setup — try again in a minute)")
 		}
-		key, err := nb.CreateSetupKey(ctx, in.Username)
+		groupID, err := userVpnGroup(ctx, nb, in.Username, true)
+		if err != nil {
+			return nil, internalError("create vpn group", err)
+		}
+		key, err := nb.CreateSetupKey(ctx, in.Username, []string{groupID})
 		if err != nil {
 			return nil, internalError("create setup key", err)
 		}
@@ -230,7 +300,7 @@ func registerVpn(api huma.API, s *Server) {
 		OperationID: "disable-vpn-user",
 		Method:      "POST",
 		Path:        "/api/vpn/users/{username}/disable",
-		Summary:     "Revoke a company user's VPN enrollment key",
+		Summary:     "Revoke a company user's VPN access: the enrollment key and every device enrolled with it",
 	}, func(ctx context.Context, in *VpnUsernameInput) (*ModuleActionOutput, error) {
 		if _, err := s.requireAuth(ctx, in.SessionToken); err != nil {
 			return nil, err
@@ -242,15 +312,8 @@ func registerVpn(api huma.API, s *Server) {
 		if !available {
 			return nil, huma.Error400BadRequest("install the VPN module first")
 		}
-		var keyID string
-		err = s.DB.QueryRow(ctx, `SELECT setup_key_id FROM vpn_access WHERE username = $1`, in.Username).Scan(&keyID)
-		if err == nil {
-			if err := nb.DeleteSetupKey(ctx, keyID); err != nil {
-				log.Printf("delete setup key for %s: %v", in.Username, err)
-			}
-		}
-		if _, err := s.DB.Exec(ctx, `DELETE FROM vpn_access WHERE username = $1`, in.Username); err != nil {
-			return nil, internalError("remove vpn access record", err)
+		if err := s.revokeVpnAccess(ctx, nb, in.Username); err != nil {
+			return nil, internalError("revoke vpn access", err)
 		}
 		out := &ModuleActionOutput{}
 		out.Body.Success = true

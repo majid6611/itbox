@@ -43,7 +43,7 @@ func (s *Server) bootstrapInternalGateway(ctx context.Context) {
 		return
 	}
 
-	key, err := client.CreateSetupKey(ctx, "internal-gateway")
+	key, err := client.CreateSetupKey(ctx, "internal-gateway", nil)
 	if err != nil {
 		log.Printf("internal gateway bootstrap: create setup key: %v", err)
 		return
