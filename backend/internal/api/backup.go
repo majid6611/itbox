@@ -292,6 +292,9 @@ func (s *Server) startBackupScheduler(ctx context.Context) {
 	if _, err := s.DB.Exec(ctx, `UPDATE backup_runs SET finished_at = now(), status = 'error', error_message = 'Interrupted: the platform restarted during this run' WHERE status = 'running'`); err != nil {
 		log.Printf("backup: clear interrupted runs: %v", err)
 	}
+	// Also check shortly after startup: a server that is restarted often, or
+	// only switched on part of the day, might never live to see an hourly tick.
+	time.AfterFunc(2*time.Minute, func() { s.maybeRunScheduledBackup(ctx) })
 	ticker := time.NewTicker(1 * time.Hour)
 	go func() {
 		defer ticker.Stop()
