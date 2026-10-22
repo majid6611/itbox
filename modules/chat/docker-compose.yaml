@@ -5,7 +5,12 @@ networks:
 
 services:
   chat:
-    image: it-chat:latest
+    # Built from the source shipped with the module (MODULE_DIR/MODULE_VERSION
+    # are filled in by the platform). The version in the tag is what keeps the
+    # previous version's image around for a rollback — so bump the module's
+    # version in manifest.yaml whenever its code changes.
+    build: ${MODULE_DIR}/service
+    image: it-chat:${MODULE_VERSION}
     restart: unless-stopped
     environment:
       DATABASE_URL: ${DATABASE_URL}

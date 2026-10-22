@@ -98,17 +98,14 @@ from inside its own container against the *host's* Docker socket
 `docker-compose.yaml` will not resolve correctly this way — **use named
 Docker volumes for module data**, not host bind mounts.
 
-**Feature-module images are built locally**, not pulled — the modules
-that ship their own service code reference `it-<name>:latest` images that
-must exist on the host before they're installed from the Module Store
-(`install.sh` doesn't build these yet):
-
-```sh
-docker build -t it-wiki:latest     modules/wiki/service
-docker build -t it-chat:latest     modules/chat/service
-docker build -t it-voip:latest     modules/voip/service
-docker build -t it-asterisk:latest modules/voip/asterisk
-```
+**Modules that ship their own code are built from source.** Their compose
+file has `build: ${MODULE_DIR}/service` (the platform fills in where the
+module's files are and its version), and the image is tagged with the
+module's version, e.g. `it-wiki:1.0.0`. Installing or updating a module
+therefore compiles it on the host, which takes a few minutes the first
+time; the previous version's image stays behind so an update can roll back.
+**Bump `version` in the module's `manifest.yaml` whenever its code changes**
+— an unchanged version reuses the already-built image.
 
 ## Routing
 

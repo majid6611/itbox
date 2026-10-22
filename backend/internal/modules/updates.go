@@ -6,6 +6,7 @@ import (
 	"log"
 	"strconv"
 	"strings"
+	"time"
 
 	"it-platform/backend/internal/registryclient"
 )
@@ -155,7 +156,9 @@ func (m *Manager) ApplyUpdate(ctx context.Context, moduleID string) error {
 	// must never cut an update off half-way (or skip its rollback).
 	go func() {
 		defer done()
-		ctx, cancel := longOp()
+		// Longer than other operations: a module that ships its own code
+		// compiles it as part of the restart.
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 		defer cancel()
 		bundle, err := m.registryClient.DownloadBundle(ctx, entry.ID, entry.LatestVersion, entry.SHA256)
 		if err != nil {

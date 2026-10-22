@@ -465,6 +465,10 @@ func (m *Manager) doInstall(ctx context.Context, moduleID string, manifest *Mani
 	resolved := make(map[string]string, len(manifest.ConfigSchema)+3)
 	resolved["BASE_DOMAIN"] = m.BaseDomain()
 	resolved["MODULE_ID"] = moduleID
+	// Modules that ship their own code build it from here; see the wiki
+	// module's docker-compose.yaml.
+	resolved["MODULE_DIR"] = manifest.Dir
+	resolved["MODULE_VERSION"] = manifest.Version
 	if manifest.NeedsDatabase {
 		resolved["DATABASE_URL"] = m.databaseURL
 	}
