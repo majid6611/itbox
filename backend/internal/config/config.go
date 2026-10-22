@@ -10,6 +10,9 @@ type Config struct {
 	DatabaseURL   string
 	ModulesDir    string
 	DataDir       string
+	// SnapshotDir is where safety dumps of the database are kept (before
+	// upgrades and restores). Must be on persistent storage.
+	SnapshotDir   string
 	AdminEmail    string
 	AdminPassword string
 	BaseDomain    string
@@ -34,6 +37,7 @@ func Load() (*Config, error) {
 		DatabaseURL:   getEnv("DATABASE_URL", ""),
 		ModulesDir:    getEnv("MODULES_DIR", "./modules"),
 		DataDir:       getEnv("DATA_DIR", "./data/modules"),
+		SnapshotDir:   getEnv("SNAPSHOT_DIR", "./data/snapshots"),
 		AdminEmail:    getEnv("ADMIN_EMAIL", ""),
 		AdminPassword: getEnv("ADMIN_PASSWORD", ""),
 		BaseDomain:    getEnv("BASE_DOMAIN", "localhost"),

@@ -30,6 +30,10 @@ type Server struct {
 	// restore the platform database for backups.
 	DatabaseURL string
 
+	// SnapshotDir holds safety dumps taken before anything that could
+	// lose data (see db.Snapshot).
+	SnapshotDir string
+
 	// GatewayContainerName is the internal VPN gateway's fixed container
 	// name (see docker-compose.yaml's internal-gateway service) — needed
 	// to `docker exec` its one-time NetBird enrollment.

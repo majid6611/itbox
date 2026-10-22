@@ -274,6 +274,29 @@ registering to it first (IP-authenticated) is blocked too — add its address
 to `internal4`, or open 5060/udp and the RTP range, if a customer needs
 that.
 
+## Upgrades and data safety
+
+A version change must never delete customer data. Four rules enforce it:
+
+- **Snapshot first.** Before applying any pending database migration (and
+  before a module update that migrates the shared database, and before
+  "Restore everything" replaces it), the platform saves a full `pg_dump` to
+  `data/snapshots/` and refuses to continue if that fails. The last 5 are
+  kept. To go back: `pg_restore --clean --if-exists --single-transaction`
+  that file into the `postgres` container.
+- **All or nothing.** Every migration runs in its own transaction.
+- **No downgrades.** If the database was upgraded by a newer version, older
+  code refuses to start instead of running against a schema it doesn't
+  know. Restore a snapshot or install the newer version.
+- **No destructive migrations by accident.** `go test ./internal/db/` fails
+  on `DROP TABLE/COLUMN`, `TRUNCATE`, `DELETE FROM` or a column type change
+  in any core or module migration, unless the file carries a
+  `-- allow-destructive: <why no data is lost>` line. Prefer adding columns
+  and tables; keep the old ones until a later version has stopped using them.
+
+Never bump the pinned `postgres:16` image casually: a major Postgres
+version can't open the previous version's data directory.
+
 ## Repo layout
 
 ```

@@ -85,6 +85,7 @@ services:
       DATABASE_URL: postgres://itplatform:${POSTGRES_PASSWORD}@postgres:5432/itplatform?sslmode=disable
       MODULES_DIR: /app/modules
       DATA_DIR: /app/data/modules
+      SNAPSHOT_DIR: /app/data/snapshots
       ADMIN_EMAIL: ${ADMIN_EMAIL}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD}
       BASE_DOMAIN: ${BASE_DOMAIN}
@@ -100,6 +101,7 @@ services:
       # backend/internal/modules/updates.go.
       - ./modules:/app/modules
       - ./data/modules:/app/data/modules
+      - ./data/snapshots:/app/data/snapshots
       - ./nginx/conf.d:/app/nginx/conf.d
       - /var/run/docker.sock:/var/run/docker.sock
     depends_on:

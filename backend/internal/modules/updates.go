@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"it-platform/backend/internal/db"
 	"it-platform/backend/internal/registryclient"
 )
 
@@ -141,6 +142,14 @@ func (m *Manager) ApplyUpdate(ctx context.Context, moduleID string) error {
 		return err
 	}
 	defer done()
+
+	// A module that shares the platform database migrates it when its new
+	// version starts. Keep a way back first, and don't update without one.
+	if old, ok := m.registry.Get(moduleID); ok && old.NeedsDatabase {
+		if _, err := db.Snapshot(ctx, m.databaseURL, m.SnapshotDir, "before-update-"+moduleID); err != nil {
+			return fmt.Errorf("not updating: couldn't take a safety snapshot of the database first: %w", err)
+		}
+	}
 
 	bundle, err := m.registryClient.DownloadBundle(ctx, entry.ID, entry.LatestVersion, entry.SHA256)
 	if err != nil {

@@ -1,5 +1,6 @@
 .env
 data/modules/*
+data/snapshots/
 !data/modules/.gitkeep
 nginx/conf.d/*
 !nginx/conf.d/.gitkeep

@@ -6,6 +6,6 @@ COPY . .
 RUN CGO_ENABLED=0 go build -o /out/server ./cmd/server
 
 FROM alpine:3.20
-RUN apk add --no-cache docker-cli docker-cli-compose ca-certificates
+RUN apk add --no-cache docker-cli docker-cli-compose ca-certificates postgresql16-client
 COPY --from=build /out/server /usr/local/bin/server
 ENTRYPOINT ["server"]

@@ -51,6 +51,9 @@ type Manager struct {
 	// in and what LDAP group they're in, which core already tracks there.
 	databaseURL string
 
+	// SnapshotDir is where pre-update database snapshots go.
+	SnapshotDir string
+
 	// baseDomain is mutable at runtime (see SetBaseDomain) — an admin can
 	// change it from the Settings panel without a redeploy, so every
 	// access goes through the mutex instead of treating it as read-only

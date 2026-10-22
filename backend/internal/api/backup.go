@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
+
+	"it-platform/backend/internal/db"
 )
 
 // webdavBackupNetwork is the docker network the throwaway rclone
@@ -222,6 +224,15 @@ func (s *Server) runRestorePlatform(ctx context.Context) {
 	if err != nil {
 		finish("error", err)
 		return
+	}
+
+	// The restore replaces the whole database; keep a way back to what's
+	// there now, and don't proceed without one.
+	if path, err := db.Snapshot(ctx, s.DatabaseURL, s.SnapshotDir, "before-restore"); err != nil {
+		finish("error", fmt.Errorf("not restoring: couldn't take a safety snapshot of the current data first: %w", err))
+		return
+	} else {
+		log.Printf("restore: safety snapshot of current data saved to %s", path)
 	}
 
 	if err := s.Docker.RestoreDatabaseFromRemote(ctx, webdavBackupNetwork, s.DatabaseURL, env, root+platformDumpPath); err != nil {

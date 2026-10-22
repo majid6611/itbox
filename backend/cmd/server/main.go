@@ -30,7 +30,7 @@ func main() {
 	}
 	defer pool.Close()
 
-	if err := db.Migrate(ctx, pool); err != nil {
+	if err := db.Migrate(ctx, pool, cfg.DatabaseURL, cfg.SnapshotDir); err != nil {
 		log.Fatalf("db migrate: %v", err)
 	}
 
@@ -53,6 +53,7 @@ func main() {
 		log.Fatalf("module manager: %v", err)
 	}
 
+	moduleManager.SnapshotDir = cfg.SnapshotDir
 	srv := &api.Server{
 		Auth:                 authService,
 		Employee:             employeeService,
@@ -61,6 +62,7 @@ func main() {
 		Registry:             registry,
 		DB:                   pool,
 		DatabaseURL:          cfg.DatabaseURL,
+		SnapshotDir:          cfg.SnapshotDir,
 		GatewayContainerName: cfg.GatewayContainerName,
 	}
 	go srv.SyncGatewayRoutesOnStart()
