@@ -26,16 +26,29 @@ async function copy(text: string, what: string) {
   }
 }
 
-const tab = ref<'windows' | 'mac' | 'linux' | 'phone'>('windows')
+// Open on the tab that matches the computer being used.
+function guessTab(): 'windows' | 'mac' | 'linux' | 'phone' {
+  const ua = navigator.userAgent
+  if (/iPhone|iPad|Android/i.test(ua)) return 'phone'
+  if (/Windows/i.test(ua)) return 'windows'
+  if (/Mac/i.test(ua)) return 'mac'
+  return 'linux'
+}
+const tab = ref<'windows' | 'mac' | 'linux' | 'phone'>(guessTab())
+
+// What to type depends on the program: Linux file browsers want dav://.
+const shownAddress = computed(() => (tab.value === 'linux' ? davAddress.value : address.value))
+const portNumber = computed(() => window.location.port || (window.location.protocol === 'https:' ? '443' : '80'))
+const linuxType = computed(() => (window.location.protocol === 'https:' ? 'Secure WebDAV (HTTPS)' : 'WebDAV (HTTP)'))
 </script>
 
 <template>
   <div class="guide">
     <div class="card address-card">
       <div class="row">
-        <span class="label">File server address</span>
-        <code>{{ address }}</code>
-        <button type="button" class="secondary small" @click="copy(address, 'address')">
+        <span class="label">Address to type</span>
+        <code>{{ shownAddress }}</code>
+        <button type="button" class="secondary small" @click="copy(shownAddress, 'address')">
           {{ copied === 'address' ? 'Copied' : 'Copy' }}
         </button>
       </div>
@@ -95,18 +108,30 @@ const tab = ref<'windows' | 'mac' | 'linux' | 'phone'>('windows')
     </div>
 
     <div class="card steps" v-else-if="tab === 'linux'">
+      <p class="how-title">Linux Mint (Nemo) and Cinnamon</p>
       <ol>
-        <li>Open your <strong>Files</strong> app (Nemo, Nautilus, Dolphin…).</li>
-        <li>
-          Press <kbd>Ctrl</kbd> <kbd>L</kbd> and type <code>{{ davAddress }}</code>
-          <button type="button" class="secondary small" @click="copy(davAddress, 'linux')">{{ copied === 'linux' ? 'Copied' : 'Copy' }}</button>
-          then press Enter.
-        </li>
-        <li>Enter your company username and password, and tick "Remember" if you like.</li>
+        <li>Open the <strong>Files</strong> app and choose <strong>File → Connect to Server…</strong></li>
+        <li>Fill in the form, then click <strong>Connect</strong>:</li>
       </ol>
-      <p class="hint small">
-        Or from a terminal: <code>rclone</code> with a WebDAV remote at <code>{{ address }}</code>, vendor "other".
-      </p>
+      <div class="fields">
+        <span>Type</span><code>{{ linuxType }}</code>
+        <span>Server</span><code>{{ hostname }}</code>
+        <span>Port</span><code>{{ portNumber }}</code>
+        <span>Folder</span><code>/</code>
+        <span>User name</span><code>{{ username || 'your company username' }}</code>
+      </div>
+      <ol start="3">
+        <li>Enter your company password. The share appears in the sidebar under <strong>Network</strong>.</li>
+      </ol>
+      <p class="how-title">Other desktops (Ubuntu / GNOME, KDE…)</p>
+      <ol>
+        <li>
+          In the Files app press <kbd>Ctrl</kbd> <kbd>L</kbd> and type <code>{{ davAddress }}</code>
+          <button type="button" class="secondary small" @click="copy(davAddress, 'linux')">{{ copied === 'linux' ? 'Copied' : 'Copy' }}</button>
+          then press Enter. (On GNOME you can also use <strong>Other Locations → Connect to Server</strong>.)
+        </li>
+        <li>Enter your company username and password.</li>
+      </ol>
     </div>
 
     <div class="card steps" v-else>
@@ -196,6 +221,25 @@ code {
   gap: 0.6rem;
   font-size: 0.92rem;
   line-height: 1.5;
+}
+.how-title {
+  margin: 0 0 0.5rem;
+  font-weight: 700;
+  font-size: 0.92rem;
+}
+.how-title:not(:first-child) {
+  margin-top: 1rem;
+}
+.fields {
+  display: grid;
+  grid-template-columns: 8rem 1fr;
+  gap: 0.35rem 0.75rem;
+  margin: 0.5rem 0 0.5rem 1.2rem;
+  font-size: 0.9rem;
+  align-items: center;
+}
+.fields span {
+  color: var(--text-dim);
 }
 .small {
   font-size: 0.78rem;
