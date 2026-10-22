@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 )
 
@@ -290,4 +291,57 @@ func (c *Client) volumeTar(ctx context.Context, volume, mode, network string, en
 		return fmt.Errorf("volume %s: %w: %s", volume, err, out)
 	}
 	return nil
+}
+
+// ContainerState is one container of a compose project as Docker reports
+// it right now.
+type ContainerState struct {
+	Name     string
+	State    string // running, exited, restarting, paused, created, dead
+	Health   string // healthy, unhealthy, starting, or "" when it has no healthcheck
+	ExitCode int
+	// OneShot marks a setup step (restart: "no") that is expected to run
+	// once and exit, as opposed to a service that should always be up.
+	OneShot bool
+}
+
+// ProjectContainers lists every container (including stopped ones) of a
+// compose project.
+func (c *Client) ProjectContainers(ctx context.Context, project string) ([]ContainerState, error) {
+	ids, err := c.output(ctx, "ps", "-aq", "--filter", "label=com.docker.compose.project="+project)
+	if err != nil {
+		return nil, err
+	}
+	fields := strings.Fields(ids)
+	if len(fields) == 0 {
+		return nil, nil
+	}
+	out, err := c.output(ctx, append([]string{"inspect", "--format",
+		`{{.Name}}|{{.State.Status}}|{{if .State.Health}}{{.State.Health.Status}}{{end}}|{{.State.ExitCode}}|{{.HostConfig.RestartPolicy.Name}}`}, fields...)...)
+	if err != nil {
+		return nil, err
+	}
+	var res []ContainerState
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		p := strings.Split(line, "|")
+		if len(p) != 5 {
+			continue
+		}
+		code, _ := strconv.Atoi(p[3])
+		res = append(res, ContainerState{
+			Name: strings.TrimPrefix(p[0], "/"), State: p[1], Health: p[2], ExitCode: code,
+			OneShot: p[4] == "no" || p[4] == "",
+		})
+	}
+	return res, nil
+}
+
+func (c *Client) output(ctx context.Context, args ...string) (string, error) {
+	cmd := exec.CommandContext(ctx, "docker", args...)
+	cmd.Env = safeEnv()
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("docker %s: %w", args[0], err)
+	}
+	return string(out), nil
 }

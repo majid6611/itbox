@@ -81,3 +81,9 @@ func (m *Manager) ReloadSettings(ctx context.Context) error {
 	m.themeMu.Unlock()
 	return nil
 }
+
+// ProjectName is the docker compose project a module runs under.
+func (m *Manager) ProjectName(moduleID string) string { return m.projectName(moduleID) }
+
+// DataDir is where module files are rendered — on the host's data disk.
+func (m *Manager) DataDir() string { return m.dataDir }

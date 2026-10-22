@@ -1,11 +1,27 @@
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
+import { api } from '../api/client'
 import { useModulesStore } from '../stores/modules'
 import Icon from '../components/Icon.vue'
 
 const modules = useModulesStore()
 
-onMounted(() => modules.fetchAll())
+interface HealthCheck {
+  name: string
+  status: 'ok' | 'warn' | 'bad'
+  detail: string
+}
+const checks = ref<HealthCheck[] | null>(null)
+const problems = computed(() => (checks.value ?? []).filter((c) => c.status !== 'ok'))
+
+onMounted(async () => {
+  modules.fetchAll()
+  try {
+    checks.value = (await api.get<{ checks: HealthCheck[] }>('/health/report')).checks ?? []
+  } catch {
+    checks.value = null
+  }
+})
 
 function statusFor(id: string) {
   return modules.statuses[id]?.status ?? 'not_installed'
@@ -30,6 +46,17 @@ const attentionCount = computed(() => installed.value.filter((m) => ['stopped', 
   <div>
     <h1>Dashboard</h1>
     <p class="subtitle">What's running on this deployment right now.</p>
+
+    <div v-if="checks" class="card health" :class="{ 'health-bad': problems.some((p) => p.status === 'bad') }">
+      <p v-if="problems.length === 0" class="health-ok"><span class="pill pill-good">Everything is OK</span></p>
+      <template v-else>
+        <p class="health-title">Needs attention</p>
+        <p v-for="p in problems" :key="p.name" class="health-row">
+          <span class="pill" :class="p.status === 'bad' ? 'pill-bad' : 'pill-warn'">{{ p.name }}</span>
+          {{ p.detail }}
+        </p>
+      </template>
+    </div>
 
     <p v-if="modules.loading" class="hint">Loading…</p>
     <template v-else>
@@ -66,6 +93,22 @@ const attentionCount = computed(() => installed.value.filter((m) => ['stopped', 
 </template>
 
 <style scoped>
+.health {
+  padding: 0.9rem 1.1rem;
+  margin-bottom: 1.25rem;
+}
+.health-title {
+  font-weight: 600;
+  margin: 0 0 0.5rem;
+}
+.health-row {
+  margin: 0.3rem 0;
+  font-size: 0.9rem;
+  color: var(--text-dim);
+}
+.health-ok {
+  margin: 0;
+}
 h1 {
   margin-bottom: 0.35rem;
 }

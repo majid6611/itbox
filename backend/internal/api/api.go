@@ -80,6 +80,7 @@ func NewRouter(s *Server) http.Handler {
 	s.employeeLoginLimiter = ratelimit.New(loginRateLimitMax, loginRateLimitWindow)
 
 	registerHealth(api, s)
+	registerHealthReport(api, s)
 	registerAuth(api, s)
 	registerModules(api, s)
 	registerUsers(api, s)
