@@ -277,3 +277,43 @@ export interface ChatEvent {
   presence?: { username: string; online: boolean }
   group?: { id: number; name: string }
 }
+
+export type PhoneState = 'online' | 'in_call' | 'offline' | 'unknown'
+
+export interface PhoneExtension {
+  number: string
+  name: string
+  username: string | null
+  password: string
+  in_main_group: boolean
+  state: PhoneState
+}
+
+export interface PhoneSettings {
+  trunk_enabled: boolean
+  trunk_host: string
+  trunk_username: string
+  trunk_password_set: boolean
+  trunk_caller_id: string
+  allow_international: boolean
+  trunk_status: 'off' | 'connected' | 'not_connected'
+}
+
+export interface PhoneCall {
+  from: string
+  to: string
+  start: string
+  talk_seconds: number
+  result: 'answered' | 'voicemail' | 'missed' | 'busy' | 'failed'
+}
+
+export interface MyPhone {
+  number: string
+  name: string
+  password: string
+}
+
+export interface PhoneDirectoryEntry {
+  number: string
+  name: string
+}

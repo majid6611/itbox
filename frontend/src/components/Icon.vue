@@ -53,6 +53,10 @@ withDefaults(defineProps<{ name: string; size?: number }>(), { size: 18 })
       <line x1="7.5" y1="3" x2="7.5" y2="6.5" />
       <line x1="16.5" y1="3" x2="16.5" y2="6.5" />
     </template>
+    <template v-else-if="name === 'phone'">
+      <rect x="7" y="2.5" width="10" height="19" rx="2" />
+      <line x1="11" y1="18" x2="13" y2="18" />
+    </template>
     <template v-else-if="name === 'logout'">
       <path d="M9.5 4.5h-4a1.5 1.5 0 00-1.5 1.5v12a1.5 1.5 0 001.5 1.5h4" />
       <line x1="20.5" y1="12" x2="9.5" y2="12" />

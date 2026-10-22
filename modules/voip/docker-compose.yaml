@@ -1,0 +1,43 @@
+# Two containers: Asterisk itself (the engine, never seen by anyone) and
+# our own voip service, which owns the extensions/settings in the
+# platform's Postgres, writes Asterisk's config into a shared volume from
+# them, and tells Asterisk to reload over its manager port (AMI).
+networks:
+  edge:
+    external: true
+    name: it-platform-edge
+
+volumes:
+  asterisk_itp:
+  asterisk_cdr:
+  asterisk_spool:
+
+services:
+  voip:
+    image: it-voip:latest
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      AMI_SECRET: ${ami_secret}
+    volumes:
+      - asterisk_itp:/asterisk/itp
+      - asterisk_cdr:/asterisk/cdr:ro
+    networks:
+      - edge
+
+  asterisk:
+    image: it-asterisk:latest
+    restart: unless-stopped
+    # Host networking, not published ports: SIP puts IP addresses inside
+    # its own messages, and behind Docker's NAT Asterisk would hand phones
+    # its container-internal address for audio — the classic "call
+    # connects, nobody hears anything" failure. On the host's own network
+    # it sees and advertises the server's real LAN address with no extra
+    # configuration. It also avoids publishing 1000 RTP ports one by one.
+    network_mode: host
+    environment:
+      AMI_SECRET: ${ami_secret}
+    volumes:
+      - asterisk_itp:/etc/asterisk/itp:ro
+      - asterisk_cdr:/var/log/asterisk/cdr-csv
+      - asterisk_spool:/var/spool/asterisk

@@ -1,0 +1,33 @@
+id: voip
+name: Phone System
+description: >-
+  Office phone system (Asterisk). Give each employee an extension, have
+  the main number ring a group of people at once, and connect an outside
+  line from any SIP provider. Works with desk phones and free softphone
+  apps (Linphone, Zoiper, ...) on the office network or over the VPN.
+  Managed entirely from this platform's own panel — no separate PBX admin
+  screen. Employees see their own phone setup and a company phone
+  directory in the portal. Needs UDP ports 5060 and 20000-20999 free on
+  this server.
+category: collaboration
+version: "1.0.0"
+compose_file: docker-compose.yaml
+needs_database: true
+config_schema:
+  # Generated once at install, never shown — the password the voip
+  # service logs in to Asterisk's management port with.
+  - key: ami_secret
+    label: Internal Asterisk manager password
+    type: secret
+    hidden: true
+soft_dependencies:
+  - id: ldap-openldap
+    integration: directory
+path_routes:
+  - path: /api/portal/voip
+    service: voip
+    port: 8080
+  - path: /api/voip
+    service: voip
+    port: 8080
+internal_panel: /voip
