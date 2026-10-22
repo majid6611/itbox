@@ -26,6 +26,31 @@ type Extension struct {
 	InMainGroup bool
 }
 
+// IVROption is one key of the phone menu: pressing Digit rings Targets
+// (extension numbers) together.
+type IVROption struct {
+	Digit   string
+	Label   string
+	Targets []string
+}
+
+// IVR is the phone menu callers from outside hear: a recorded greeting and
+// one level of keys. It only takes effect when Enabled and a greeting file
+// actually exists.
+type IVR struct {
+	Enabled     bool
+	HasGreeting bool
+	// Recorder is the one extension that may re-record the greeting by
+	// dialing *99 ("" = nobody).
+	Recorder string
+	Options  []IVROption
+}
+
+// GreetingBase is where the greeting lives inside the asterisk container
+// (no extension: Asterisk picks the format it finds). The voip service sees
+// the same volume at its own path — see api.Server.SoundsDir.
+const GreetingBase = "/var/lib/itp-sounds/greeting"
+
 type Settings struct {
 	TrunkEnabled       bool
 	TrunkHost          string
@@ -44,7 +69,10 @@ var (
 	userRe     = regexp.MustCompile(`^[A-Za-z0-9._+-]{1,64}$`)
 	passRe     = regexp.MustCompile(`^[!-:<-~]{1,128}$`) // printable ASCII, no space or ';'
 	callerIDRe = regexp.MustCompile(`^\+?[0-9]{0,20}$`)
+	digitRe    = regexp.MustCompile(`^[1-9]$`)
 )
+
+func ValidDigit(s string) bool { return digitRe.MatchString(s) }
 
 func ValidNumber(s string) bool        { return numberRe.MatchString(s) }
 func ValidName(s string) bool          { return nameRe.MatchString(s) }
@@ -54,11 +82,11 @@ func ValidTrunkPassword(s string) bool { return passRe.MatchString(s) }
 func ValidCallerID(s string) bool      { return callerIDRe.MatchString(s) }
 
 // Render returns the generated files' contents by file name.
-func Render(exts []Extension, st Settings) map[string]string {
+func Render(exts []Extension, st Settings, ivr IVR) map[string]string {
 	trunk := st.TrunkEnabled && st.TrunkHost != "" && st.TrunkUsername != ""
 	return map[string]string{
 		"pjsip.conf":      renderPJSIP(exts, st, trunk),
-		"extensions.conf": renderDialplan(exts, st, trunk),
+		"extensions.conf": renderDialplan(exts, st, trunk, ivr),
 		"voicemail.conf":  renderVoicemail(exts),
 	}
 }
@@ -151,9 +179,10 @@ match = %[4]s
 	return b.String()
 }
 
-func renderDialplan(exts []Extension, st Settings, trunk bool) string {
+func renderDialplan(exts []Extension, st Settings, trunk bool, ivr IVR) string {
 	var b strings.Builder
 	b.WriteString(header)
+	menu := renderMenu(exts, ivr)
 
 	// What every office phone can dial.
 	b.WriteString("[itp-internal]\n")
@@ -165,7 +194,9 @@ func renderDialplan(exts []Extension, st Settings, trunk bool) string {
 	// change which account it authenticated as. Same reason both skip
 	// the PIN prompt (the s option): only a registered office phone can
 	// reach these at all.
-	b.WriteString(`exten => 0,1,Goto(itp-main,s,1)
+	// Staff dialing 0 go straight to the main group: the menu is for callers
+	// from outside.
+	b.WriteString(`exten => 0,1,Goto(itp-ring,s,1)
 exten => *97,1,VoiceMailMain(${CHANNEL(endpoint)}@default,s)
  same => n,Hangup()
 exten => *98,1,VoiceMailMain(0@default,s)
@@ -175,6 +206,26 @@ exten => *43,1,Answer()
  same => n,Echo()
  same => n,Hangup()
 `)
+	if menu != "" {
+		// Lets an admin hear exactly what an outside caller hears.
+		b.WriteString("exten => *50,1,Goto(itp-ivr,s,1)\n")
+	}
+	if ivr.Recorder != "" && ValidNumber(ivr.Recorder) {
+		// Only the chosen extension may replace the company greeting; the
+		// endpoint is the account the phone authenticated as, which a phone
+		// can't fake. Beep, speak, press # (or stop talking for 5 seconds),
+		// then it plays the result back. A hang-up keeps what was said.
+		fmt.Fprintf(&b, `exten => *99,1,GotoIf($["${CHANNEL(endpoint)}" = "%s"]?ok)
+ same => n,Playback(ss-noservice)
+ same => n,Hangup()
+ same => n(ok),Answer()
+ same => n,Wait(1)
+ same => n,Record(%s.wav,5,120,k)
+ same => n,Wait(1)
+ same => n,Playback(%s)
+ same => n,Hangup()
+`, ivr.Recorder, GreetingBase, GreetingBase)
+	}
 	if trunk {
 		b.WriteString("exten => _9X.,1,NoOp(outside call)\n")
 		if !st.AllowInternational {
@@ -192,8 +243,9 @@ exten => *43,1,Answer()
 	}
 	b.WriteString("\n")
 
-	// The main number: rings everyone in the group at once, then the
-	// shared mailbox (checked with *98).
+	// The main number. With a phone menu set up, outside callers hear it
+	// first; otherwise (and as the fallback) it rings everyone in the main
+	// group at once, then the shared mailbox (checked with *98).
 	var members []string
 	for _, e := range exts {
 		if e.InMainGroup {
@@ -201,10 +253,17 @@ exten => *43,1,Answer()
 		}
 	}
 	b.WriteString("[itp-main]\nexten => s,1,NoOp(main number)\n")
+	if menu != "" {
+		b.WriteString(" same => n,Goto(itp-ivr,s,1)\n\n")
+	} else {
+		b.WriteString(" same => n,Goto(itp-ring,s,1)\n\n")
+	}
+	b.WriteString("[itp-ring]\nexten => s,1,NoOp(ring the main group)\n")
 	if len(members) > 0 {
 		fmt.Fprintf(&b, " same => n,Dial(%s,30)\n", strings.Join(members, "&"))
 	}
 	b.WriteString(" same => n,VoiceMail(0@default,u)\n same => n,Hangup()\n\n")
+	b.WriteString(menu)
 
 	// Calls coming in from the outside line, whatever number the
 	// provider says was dialed.
@@ -242,4 +301,55 @@ func Write(dir string, files map[string]string) error {
 		}
 	}
 	return nil
+}
+
+// renderMenu writes the phone menu context, or "" when there is none to
+// offer (switched off, no greeting recorded yet, or no key that still points
+// at an existing extension). One level only: a key rings people, it never
+// opens another menu.
+func renderMenu(exts []Extension, ivr IVR) string {
+	if !ivr.Enabled || !ivr.HasGreeting {
+		return ""
+	}
+	exists := make(map[string]bool, len(exts))
+	for _, e := range exts {
+		exists[e.Number] = true
+	}
+	var b strings.Builder
+	keys := 0
+	for _, o := range ivr.Options {
+		var dial []string
+		var first string
+		for _, t := range o.Targets {
+			if exists[t] {
+				if first == "" {
+					first = t
+				}
+				dial = append(dial, "PJSIP/"+t)
+			}
+		}
+		if len(dial) == 0 || !ValidDigit(o.Digit) {
+			continue
+		}
+		// One person: their own voicemail. A group: the shared mailbox.
+		mailbox := "0"
+		if len(dial) == 1 {
+			mailbox = first
+		}
+		fmt.Fprintf(&b, "; %s = %s\nexten => %s,1,NoOp(menu key %s)\n same => n,Dial(%s,25)\n same => n,VoiceMail(%s@default,u)\n same => n,Hangup()\n",
+			o.Digit, o.Label, o.Digit, o.Digit, strings.Join(dial, "&"), mailbox)
+		keys++
+	}
+	if keys == 0 {
+		return ""
+	}
+	// Nothing pressed or a key that isn't on the menu: one more go, then the
+	// main group. 0 always reaches the main group.
+	return "[itp-ivr]\nexten => s,1,Answer()\n same => n,Set(TRIES=0)\n" +
+		" same => n(menu),Background(" + GreetingBase + ")\n same => n,WaitExten(6)\n" +
+		b.String() +
+		"exten => 0,1,Goto(itp-ring,s,1)\n" +
+		"exten => t,1,Set(TRIES=$[${TRIES}+1])\n" +
+		" same => n,GotoIf($[${TRIES}>=2]?ring)\n same => n,Goto(s,menu)\n same => n(ring),Goto(itp-ring,s,1)\n" +
+		"exten => i,1,Playback(pbx-invalid)\n same => n,Goto(t,1)\n\n"
 }

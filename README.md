@@ -252,6 +252,23 @@ keeps our panel the only UI. FreeSWITCH was heavier and more complex for
 5–50 users; Kamailio/OpenSIPS are SIP proxies, not PBXs (no voicemail or
 call logic).
 
+### Phone menu ("press 1 for IT")
+
+One level, no sub-menus. Outside callers hear a recorded greeting and press
+a key; each key (1–9) rings one or more extensions together, and falls back
+to that person's voicemail (or the shared one for a group). Pressing `0`, a
+key that isn't on the menu twice, or nothing, rings the main number. Staff
+dialing `0` skip the menu; dialing `*50` plays it, so an admin can hear what
+callers hear.
+
+The greeting is either uploaded in the panel (any mp3/m4a/wav/ogg/flac; the
+voip service converts it with ffmpeg to the 8 kHz mono WAV Asterisk plays) or
+recorded by phone: the admin picks one extension and dials `*99` from it (only
+that extension may — Asterisk checks which account the phone logged in as).
+It lives on the `asterisk_sounds` volume, which is part of the platform
+backup. Menu keys and settings are stored in `voip_ivr_options` and
+`voip_settings`; `pbx.Render` turns them into the `[itp-ivr]` dialplan.
+
 ## Firewall
 
 `install.sh` offers to install a host firewall (`scripts/firewall.nft`,

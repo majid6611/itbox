@@ -325,3 +325,18 @@ export interface PhoneDirectoryEntry {
   number: string
   name: string
 }
+
+export interface PhoneMenuKey {
+  digit: string
+  label: string
+  targets: string[]
+}
+
+export interface PhoneMenu {
+  enabled: boolean
+  recorder: string
+  record_code: string
+  has_greeting: boolean
+  greeting_updated_at?: string
+  options: PhoneMenuKey[]
+}

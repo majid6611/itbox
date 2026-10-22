@@ -24,6 +24,9 @@ type Server struct {
 	// ConfigDir is the volume shared with the asterisk container, where
 	// the generated pjsip/extensions/voicemail files go.
 	ConfigDir string
+	// SoundsDir is the volume shared with asterisk where the phone-menu
+	// greeting lives (asterisk sees it at /var/lib/itp-sounds).
+	SoundsDir string
 	// CDRFile is Asterisk's call log (cdr_csv's Master.csv), read-only.
 	CDRFile string
 
@@ -54,6 +57,7 @@ func NewRouter(s *Server) http.Handler {
 
 	registerExtensions(api, s)
 	registerSettings(api, s)
+	registerIVR(api, s)
 	registerCalls(api, s)
 	registerPortal(api, s)
 
@@ -119,7 +123,11 @@ func (s *Server) Apply(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := pbx.Write(s.ConfigDir, pbx.Render(exts, st)); err != nil {
+	ivr, err := s.loadIVR(ctx)
+	if err != nil {
+		return err
+	}
+	if err := pbx.Write(s.ConfigDir, pbx.Render(exts, st, ivr)); err != nil {
 		return err
 	}
 	if err := s.AMI.Command(ctx, "module reload res_pjsip.so", "dialplan reload", "voicemail reload"); err != nil {

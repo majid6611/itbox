@@ -4,6 +4,7 @@ import { useVoipStore } from '../stores/voip'
 import { useUsersStore } from '../stores/users'
 import { ApiError } from '../api/client'
 import type { PhoneExtension } from '../api/types'
+import PhoneMenu from '../components/PhoneMenu.vue'
 
 const voip = useVoipStore()
 const users = useUsersStore()
@@ -280,14 +281,19 @@ function duration(s: number) {
       </div>
     </form>
 
+    <h2>Phone menu</h2>
+    <PhoneMenu />
+
     <h2>What to dial</h2>
     <table class="users-table dial-table">
       <tbody>
         <tr><td><code>101</code>, <code>102</code>, …</td><td>Call a colleague</td></tr>
-        <tr><td><code>0</code></td><td>The main number (rings everyone ticked above)</td></tr>
+        <tr><td><code>0</code></td><td>The main number (rings everyone ticked above) — also what callers from outside get when they press 0 in the phone menu</td></tr>
         <tr><td><code>9</code> + number</td><td>Outside call, e.g. <code>95551234</code></td></tr>
         <tr><td><code>*97</code></td><td>Your voicemail</td></tr>
         <tr><td><code>*98</code></td><td>Main number's voicemail</td></tr>
+        <tr><td><code>*50</code></td><td>Hear the phone menu, exactly as an outside caller does (only when it is switched on)</td></tr>
+        <tr><td><code>*99</code></td><td>Record the phone menu greeting (only from the extension chosen in "Phone menu")</td></tr>
         <tr><td><code>*43</code></td><td>Echo test — hear yourself to check the phone works</td></tr>
       </tbody>
     </table>

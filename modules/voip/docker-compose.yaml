@@ -11,6 +11,9 @@ volumes:
   asterisk_itp:
   asterisk_cdr:
   asterisk_spool:
+  # The phone-menu greeting: written by the voip service (upload) or by
+  # Asterisk itself (recorded by phone), played back by Asterisk.
+  asterisk_sounds:
 
 services:
   voip:
@@ -27,6 +30,7 @@ services:
     volumes:
       - asterisk_itp:/asterisk/itp
       - asterisk_cdr:/asterisk/cdr:ro
+      - asterisk_sounds:/sounds
     networks:
       - edge
 
@@ -46,4 +50,5 @@ services:
     volumes:
       - asterisk_itp:/etc/asterisk/itp:ro
       - asterisk_cdr:/var/log/asterisk/cdr-csv
+      - asterisk_sounds:/var/lib/itp-sounds
       - asterisk_spool:/var/spool/asterisk

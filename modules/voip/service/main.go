@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"it-platform/voip/internal/ami"
@@ -53,7 +54,15 @@ func main() {
 		DB:        pool,
 		AMI:       &ami.Client{Addr: amiAddr, Username: "itp", Secret: amiSecret},
 		ConfigDir: envOr("ASTERISK_CONFIG_DIR", "/asterisk/itp"),
+		SoundsDir: envOr("ASTERISK_SOUNDS_DIR", "/sounds"),
 		CDRFile:   envOr("ASTERISK_CDR_FILE", "/asterisk/cdr/Master.csv"),
+	}
+	// Asterisk runs as another user and records the greeting into this
+	// folder when someone dials *99, so it must be open to it.
+	if err := os.MkdirAll(s.SoundsDir, 0o777); err == nil {
+		_ = os.Chmod(s.SoundsDir, 0o777)
+		// A greeting saved by an earlier version may not be writable by it.
+		_ = os.Chmod(filepath.Join(s.SoundsDir, "greeting.wav"), 0o666)
 	}
 	// Write Asterisk's config from the database on every start, so the
 	// generated files always match what's stored — including after an
