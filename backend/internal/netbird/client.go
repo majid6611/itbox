@@ -153,17 +153,40 @@ func (c *Client) ListGroups(ctx context.Context) ([]Group, error) {
 	return out, nil
 }
 
+type Route struct {
+	ID        string `json:"id"`
+	NetworkID string `json:"network_id"`
+	Network   string `json:"network"`
+	Peer      string `json:"peer"`
+}
+
+func (c *Client) ListRoutes(ctx context.Context) ([]Route, error) {
+	var out []Route
+	if err := c.do(ctx, http.MethodGet, "/api/routes", nil, &out); err != nil {
+		return nil, fmt.Errorf("list routes: %w", err)
+	}
+	return out, nil
+}
+
+func (c *Client) DeleteRoute(ctx context.Context, id string) error {
+	if err := c.do(ctx, http.MethodDelete, "/api/routes/"+id, nil, nil); err != nil {
+		return fmt.Errorf("delete route: %w", err)
+	}
+	return nil
+}
+
 // CreateRoute advertises network (a CIDR, e.g. "10.201.28.2/32") as
 // reachable via peerID to every peer in groupID — the mechanism behind
-// both the LAN-gateway feature and private module routing: a device VPN
+// both private module routing and office-network access: a device VPN
 // clients get told about only because a specific peer said "I can reach
-// this," not because it's on the public internet.
-func (c *Client) CreateRoute(ctx context.Context, network, peerID, groupID string) error {
+// this," not because it's on the public internet. networkID is the
+// route's stable name, what syncGatewayRoutes matches existing routes by.
+func (c *Client) CreateRoute(ctx context.Context, networkID, network, description, peerID, groupID string) error {
 	return c.do(ctx, http.MethodPost, "/api/routes", map[string]any{
 		"network":     network,
 		"peer":        peerID,
-		"description": "internal services gateway",
-		"network_id":  "internal-services",
+		"description": description,
+		"network_id":  networkID,
 		"masquerade":  true,
 		"enabled":     true,
 		"metric":      100, // required, 1-9999 — no default, NetBird 422s without it

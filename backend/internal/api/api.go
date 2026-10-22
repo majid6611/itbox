@@ -81,6 +81,7 @@ func NewRouter(s *Server) http.Handler {
 	registerUsers(api, s)
 	registerGroups(api, s)
 	registerVpn(api, s)
+	registerOfficeNetwork(api, s)
 	registerSettings(api, s)
 	registerBackup(api, s)
 	registerComputeMesh(api, s)

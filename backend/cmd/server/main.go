@@ -53,7 +53,7 @@ func main() {
 		log.Fatalf("module manager: %v", err)
 	}
 
-	router := api.NewRouter(&api.Server{
+	srv := &api.Server{
 		Auth:                 authService,
 		Employee:             employeeService,
 		Docker:               dockerClient,
@@ -61,7 +61,9 @@ func main() {
 		Registry:             registry,
 		DB:                   pool,
 		GatewayContainerName: cfg.GatewayContainerName,
-	})
+	}
+	go srv.SyncGatewayRoutesOnStart()
+	router := api.NewRouter(srv)
 
 	log.Printf("listening on %s", cfg.ListenAddr)
 	if err := http.ListenAndServe(cfg.ListenAddr, router); err != nil {

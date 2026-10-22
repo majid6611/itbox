@@ -111,6 +111,22 @@ func (c *Client) WriteVolumeFile(ctx context.Context, volume, path, content stri
 	return nil
 }
 
+// HostRoutes returns the host's own IPv4 routing table (`ip -4 route`),
+// read from a throwaway busybox container on the host's network — this
+// backend runs on a Docker bridge, so its own routing table says nothing
+// about the office LAN the host is actually plugged into.
+func (c *Client) HostRoutes(ctx context.Context) (string, error) {
+	var out, stderr bytes.Buffer
+	cmd := exec.CommandContext(ctx, "docker", "run", "--rm", "--network", "host", "busybox", "ip", "-4", "route")
+	cmd.Env = safeEnv()
+	cmd.Stdout = &out
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("read host routes: %w: %s", err, stderr.String())
+	}
+	return out.String(), nil
+}
+
 // RestartContainer restarts a running container by name — e.g. to pick up
 // a config file that was just rewritten out-of-band.
 func (c *Client) RestartContainer(ctx context.Context, containerName string) error {

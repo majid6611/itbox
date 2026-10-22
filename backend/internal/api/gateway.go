@@ -2,9 +2,12 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"strings"
 	"time"
+
+	"it-platform/backend/internal/netbird"
 )
 
 // bootstrapInternalGateway enrolls the platform's own internal-gateway
@@ -65,12 +68,101 @@ func (s *Server) bootstrapInternalGateway(ctx context.Context) {
 		return
 	}
 
-	peers, err := client.ListPeers(ctx)
+	// The gateway peer can take a moment to show up after `netbird up`.
+	for attempt := 0; attempt < 10; attempt++ {
+		if err = s.syncGatewayRoutes(ctx); err == nil {
+			break
+		}
+		time.Sleep(3 * time.Second)
+	}
 	if err != nil {
-		log.Printf("internal gateway bootstrap: list peers: %v", err)
+		log.Printf("internal gateway bootstrap: %v", err)
 		return
 	}
-	var peerID string
+
+	log.Printf("internal gateway bootstrap: complete")
+}
+
+// Route names (NetBird network_id) for the two things the gateway can
+// advertise — syncGatewayRoutes owns every route with one of these names.
+const (
+	internalServicesRouteID = "internal-services"
+	officeNetworkRouteID    = "office-network"
+)
+
+// syncGatewayRoutes makes NetBird's routes through the internal gateway
+// match what they should be right now: always nginx's address (private
+// modules), plus the office LAN if an admin turned that on. Converges
+// rather than just creating, so it's safe to run any time — at install,
+// at every backend start, and on each office-network settings save. The
+// at-start run is what repairs a route left pointing at an old address
+// (e.g. after the edge network's subnet changed), which a create-once
+// bootstrap never revisits.
+func (s *Server) syncGatewayRoutes(ctx context.Context) error {
+	client, available, err := s.netbirdClient(ctx)
+	if err != nil {
+		return fmt.Errorf("netbird client: %w", err)
+	}
+	if !available {
+		return nil // VPN not installed/bootstrapped — nothing to route
+	}
+
+	var officeNetwork string
+	if err := s.DB.QueryRow(ctx, `SELECT vpn_office_network FROM platform_settings WHERE id = true`).Scan(&officeNetwork); err != nil {
+		return fmt.Errorf("load office network setting: %w", err)
+	}
+	want := map[string]string{internalServicesRouteID: internalServicesCIDR}
+	if officeNetwork != "" {
+		want[officeNetworkRouteID] = officeNetwork
+	}
+
+	peerID, groupID, err := s.gatewayPeerAndGroup(ctx, client)
+	if err != nil {
+		return err
+	}
+
+	routes, err := client.ListRoutes(ctx)
+	if err != nil {
+		return err
+	}
+	have := map[string]bool{}
+	for _, r := range routes {
+		if r.NetworkID != internalServicesRouteID && r.NetworkID != officeNetworkRouteID {
+			continue // not ours
+		}
+		if want[r.NetworkID] == r.Network && r.Peer == peerID && !have[r.NetworkID] {
+			have[r.NetworkID] = true
+			continue
+		}
+		if err := client.DeleteRoute(ctx, r.ID); err != nil {
+			return err
+		}
+		log.Printf("gateway routes: removed %s (%s)", r.NetworkID, r.Network)
+	}
+	for id, cidr := range want {
+		if have[id] {
+			continue
+		}
+		desc := "internal services gateway"
+		if id == officeNetworkRouteID {
+			desc = "office network"
+		}
+		if err := client.CreateRoute(ctx, id, cidr, desc, peerID, groupID); err != nil {
+			return fmt.Errorf("create route %s: %w", id, err)
+		}
+		log.Printf("gateway routes: added %s (%s)", id, cidr)
+	}
+	return nil
+}
+
+// gatewayPeerAndGroup finds the internal gateway's own NetBird peer and
+// the "All" group NetBird creates automatically — a route's distribution
+// group (which peers get told about it).
+func (s *Server) gatewayPeerAndGroup(ctx context.Context, client *netbird.Client) (peerID, groupID string, err error) {
+	peers, err := client.ListPeers(ctx)
+	if err != nil {
+		return "", "", err
+	}
 	for _, p := range peers {
 		if p.Hostname == s.GatewayContainerName {
 			peerID = p.ID
@@ -78,33 +170,18 @@ func (s *Server) bootstrapInternalGateway(ctx context.Context) {
 		}
 	}
 	if peerID == "" {
-		log.Printf("internal gateway bootstrap: gateway peer not found among %d peers (looked for hostname %q)", len(peers), s.GatewayContainerName)
-		return
+		return "", "", fmt.Errorf("gateway peer not found among %d peers (looked for hostname %q)", len(peers), s.GatewayContainerName)
 	}
-
 	groups, err := client.ListGroups(ctx)
 	if err != nil {
-		log.Printf("internal gateway bootstrap: list groups: %v", err)
-		return
+		return "", "", err
 	}
-	var allGroupID string
 	for _, g := range groups {
 		if strings.EqualFold(g.Name, "All") {
-			allGroupID = g.ID
-			break
+			return peerID, g.ID, nil
 		}
 	}
-	if allGroupID == "" {
-		log.Printf("internal gateway bootstrap: no \"All\" group found")
-		return
-	}
-
-	if err := client.CreateRoute(ctx, internalServicesCIDR, peerID, allGroupID); err != nil {
-		log.Printf("internal gateway bootstrap: create route: %v", err)
-		return
-	}
-
-	log.Printf("internal gateway bootstrap: complete")
+	return "", "", fmt.Errorf("no \"All\" group found")
 }
 
 // internalServicesCIDR is nginx's fixed edge-network address (see

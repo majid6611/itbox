@@ -9,6 +9,8 @@ export const useVpnStore = defineStore('vpn', {
     users: [] as VpnUsersResponse['users'],
     devices: [] as VpnUsersResponse['devices'],
     loading: false,
+    // Office LAN access through the VPN — see GET /api/vpn/office-network.
+    office: { available: false, enabled: false, network: '', detected: '' },
   }),
   actions: {
     async fetchAll() {
@@ -28,6 +30,15 @@ export const useVpnStore = defineStore('vpn', {
       const res = await api.post<EnableVpnResponse>(`/vpn/users/${username}/enable`)
       await this.fetchAll()
       return res.setup_key
+    },
+    async fetchOfficeNetwork() {
+      this.office = await api.get<{ available: boolean; enabled: boolean; network: string; detected: string }>(
+        '/vpn/office-network',
+      )
+    },
+    async saveOfficeNetwork(enabled: boolean, network: string) {
+      await api.put('/vpn/office-network', { enabled, network })
+      await this.fetchOfficeNetwork()
     },
     async disable(username: string) {
       await api.post(`/vpn/users/${username}/disable`)

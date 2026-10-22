@@ -1,14 +1,46 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
 import { useVpnStore } from '../stores/vpn'
+import { ApiError } from '../api/client'
 
 const vpn = useVpnStore()
 const busy = reactive<Record<string, boolean>>({})
 const revealed = ref<{ username: string; setupKey: string } | null>(null)
 
-onMounted(() => {
+const officeEnabled = ref(false)
+const officeNetwork = ref('')
+const officeSaving = ref(false)
+const officeSaved = ref(false)
+const officeError = ref('')
+
+onMounted(async () => {
   vpn.fetchAll()
+  await vpn.fetchOfficeNetwork().catch(() => {})
+  officeEnabled.value = vpn.office.enabled
+  officeNetwork.value = vpn.office.network || vpn.office.detected
 })
+
+async function saveOffice() {
+  officeSaving.value = true
+  officeSaved.value = false
+  officeError.value = ''
+  try {
+    await vpn.saveOfficeNetwork(officeEnabled.value, officeNetwork.value)
+    officeSaved.value = true
+  } catch (e) {
+    let msg = 'Could not save'
+    if (e instanceof ApiError) {
+      try {
+        msg = JSON.parse(e.message).detail ?? msg
+      } catch {
+        msg = e.message || msg
+      }
+    }
+    officeError.value = msg
+  } finally {
+    officeSaving.value = false
+  }
+}
 
 async function enable(username: string) {
   busy[username] = true
@@ -91,6 +123,31 @@ async function disable(username: string) {
         </tbody>
       </table>
 
+      <h2>Office network</h2>
+      <p class="hint">
+        Let people on the VPN reach the computers at the office — file shares, printers, remote
+        desktop and office phones — as if they were plugged in there. Off means they can only reach
+        this platform's own services.
+      </p>
+      <form class="office-form" @submit.prevent="saveOffice">
+        <label class="check">
+          <input v-model="officeEnabled" type="checkbox" :disabled="!vpn.office.available" />
+          VPN users can reach the office network
+        </label>
+        <label v-if="officeEnabled">
+          Office network
+          <input v-model.trim="officeNetwork" type="text" placeholder="192.168.1.0/24" />
+          <span v-if="vpn.office.detected" class="hint-inline">
+            This server is on <code>{{ vpn.office.detected }}</code>
+          </span>
+        </label>
+        <div class="save-row">
+          <button :disabled="officeSaving || !vpn.office.available">{{ officeSaving ? 'Saving…' : 'Save' }}</button>
+          <span v-if="officeSaved" class="saved">Saved — VPN devices pick this up within a minute.</span>
+          <span v-if="officeError" class="error">{{ officeError }}</span>
+        </div>
+      </form>
+
       <h2>Connected devices</h2>
       <p class="hint">
         Every device currently enrolled, straight from the VPN server. This isn't
@@ -124,6 +181,38 @@ async function disable(username: string) {
 </template>
 
 <style scoped>
+.office-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  max-width: 28rem;
+}
+.office-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+.office-form label.check {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
+}
+.save-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.saved {
+  color: var(--success-text);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.error {
+  color: var(--danger-text);
+  font-size: 0.85rem;
+}
 h1 {
   margin-bottom: 1.5rem;
 }
