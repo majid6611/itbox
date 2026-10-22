@@ -81,6 +81,21 @@ func (s *Server) employeeGroup(ctx context.Context, username string) (string, er
 // own LDAP group doesn't match — a channel is that group's own space, the
 // same boundary a private custom group's membership check enforces, just
 // backed by LDAP membership instead of a chat_group_members row.
+// requireRecipientExists rejects a DM to someone who isn't a company user,
+// which would otherwise be saved and sit unseen forever.
+func (s *Server) requireRecipientExists(ctx context.Context, recipient string) error {
+	users, err := directory.ListUsers(ctx, s.DB)
+	if err != nil {
+		return internalError("check recipient", err)
+	}
+	for _, u := range users {
+		if u == recipient {
+			return nil
+		}
+	}
+	return huma.Error400BadRequest("no such user")
+}
+
 func (s *Server) requireChannelMember(ctx context.Context, username, group string) error {
 	myGroup, err := s.employeeGroup(ctx, username)
 	if err != nil {

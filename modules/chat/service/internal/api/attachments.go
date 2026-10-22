@@ -84,6 +84,11 @@ func registerAttachments(api huma.API, s *Server) {
 				return nil, err
 			}
 		}
+		if data.RecipientUsername != "" {
+			if err := s.requireRecipientExists(ctx, data.RecipientUsername); err != nil {
+				return nil, err
+			}
+		}
 		if data.CustomGroupID != 0 {
 			isMember, err := s.isGroupMember(ctx, data.CustomGroupID, username)
 			if err != nil {
@@ -149,23 +154,29 @@ func registerAttachments(api huma.API, s *Server) {
 		if err != nil {
 			return nil, err
 		}
-		var filename, key string
+		var filename, key, sender string
 		var customGroupID *int64
+		var group, recipient *string
 		err = s.DB.QueryRow(ctx, `
-			SELECT a.filename, a.s3_key, m.custom_group_id
+			SELECT a.filename, a.s3_key, m.sender_username, m.custom_group_id, m.group_name, m.recipient_username
 			FROM chat_attachments a JOIN chat_messages m ON m.id = a.message_id
 			WHERE a.id = $1
-		`, in.ID).Scan(&filename, &key, &customGroupID)
+		`, in.ID).Scan(&filename, &key, &sender, &customGroupID, &group, &recipient)
 		if err != nil {
 			return nil, huma.Error404NotFound("no such attachment")
 		}
-		// Channel/DM attachments have no further access check beyond "is a
-		// logged-in employee" — same as before. A private-group attachment
-		// is the one case that needs an explicit membership check here,
-		// same as the group's messages: without this, anyone who guessed
-		// or was sent the raw attachment id could pull a file out of a
-		// group they were never added to, defeating the whole point of it
-		// being private.
+		// A file is only as visible as the message it was sent in: attachment
+		// ids are small sequential numbers, so without these checks anyone
+		// logged in could pull a file out of a DM, channel or private group
+		// they were never part of.
+		if recipient != nil && username != sender && username != *recipient {
+			return nil, huma.Error403Forbidden("this file was sent to someone else")
+		}
+		if group != nil {
+			if err := s.requireChannelMember(ctx, username, *group); err != nil {
+				return nil, err
+			}
+		}
 		if customGroupID != nil {
 			isMember, err := s.isGroupMember(ctx, *customGroupID, username)
 			if err != nil {

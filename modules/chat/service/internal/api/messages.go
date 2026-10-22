@@ -120,6 +120,11 @@ func registerMessages(api huma.API, s *Server) {
 				return nil, err
 			}
 		}
+		if in.Body.RecipientUsername != "" {
+			if err := s.requireRecipientExists(ctx, in.Body.RecipientUsername); err != nil {
+				return nil, err
+			}
+		}
 		if in.Body.CustomGroupID != 0 {
 			isMember, err := s.isGroupMember(ctx, in.Body.CustomGroupID, username)
 			if err != nil {
