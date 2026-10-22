@@ -1,4 +1,7 @@
 <script setup lang="ts">
+// Where employees log in — shown so the admin knows what to give them.
+const portalAddress = `${window.location.origin}/portal/login`
+
 import { onMounted, reactive, ref } from 'vue'
 import { useUsersStore } from '../stores/users'
 import { useGroupsStore } from '../stores/groups'
@@ -133,6 +136,9 @@ async function removeGroup(name: string, memberCount: number) {
 <template>
   <div>
     <h1>Users</h1>
+    <p class="portal-address">
+      Staff sign in at <code>{{ portalAddress }}</code> with the username and password you set here.
+    </p>
     <p class="subtitle">Company accounts and the groups they belong to.</p>
 
     <div v-if="revealed" class="revealed">
@@ -264,6 +270,14 @@ async function removeGroup(name: string, memberCount: number) {
 </template>
 
 <style scoped>
+.portal-address {
+  font-size: 0.9rem;
+  color: var(--text-dim);
+  margin: 0 0 1rem;
+}
+.portal-address code {
+  user-select: all;
+}
 h1 {
   margin-bottom: 0.35rem;
 }

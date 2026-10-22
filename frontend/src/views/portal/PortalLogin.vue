@@ -41,11 +41,18 @@ async function submit() {
       </label>
       <p v-if="error" class="error-message">{{ error }}</p>
       <button type="submit" :disabled="busy">{{ busy ? 'Logging in…' : 'Log in' }}</button>
+      <p class="other-login">Administrator? <router-link to="/login">Admin sign-in</router-link></p>
     </form>
   </div>
 </template>
 
 <style scoped>
+.other-login {
+  margin: 1rem 0 0;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  text-align: center;
+}
 .login-wrap {
   display: flex;
   justify-content: center;
