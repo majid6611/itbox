@@ -117,6 +117,11 @@ func (m *Manager) SetRoutes(ctx context.Context, moduleID string, routes []Route
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection $connection_upgrade;
+        # Module sites carry their own authentication and some are file
+        # shares: nginx's default 1 MB request limit would reject any real
+        # file, and buffering a whole upload to disk first stalls big ones.
+        client_max_body_size 0;
+        proxy_request_buffering off;
         proxy_read_timeout 3600s;
         proxy_send_timeout 3600s;
     }
@@ -164,6 +169,11 @@ server {
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection $connection_upgrade;
+        # Module sites carry their own authentication and some are file
+        # shares: nginx's default 1 MB request limit would reject any real
+        # file, and buffering a whole upload to disk first stalls big ones.
+        client_max_body_size 0;
+        proxy_request_buffering off;
         proxy_read_timeout 3600s;
         proxy_send_timeout 3600s;
     }
@@ -197,6 +207,11 @@ server {
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection $connection_upgrade;
+        # Module sites carry their own authentication and some are file
+        # shares: nginx's default 1 MB request limit would reject any real
+        # file, and buffering a whole upload to disk first stalls big ones.
+        client_max_body_size 0;
+        proxy_request_buffering off;
         proxy_read_timeout 3600s;
         proxy_send_timeout 3600s;
     }

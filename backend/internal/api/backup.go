@@ -204,6 +204,9 @@ func (s *Server) runRestore(ctx context.Context) {
 		finish("error", err)
 		return
 	}
+	// Empty folders don't survive a backup, and every user and group needs
+	// theirs to exist before they can save anything.
+	s.backfillWebdavFolders(ctx)
 	finish("success", nil)
 }
 
@@ -271,6 +274,7 @@ func (s *Server) runRestorePlatform(ctx context.Context) {
 			failures = append(failures, id+": "+err.Error())
 		}
 	}
+	s.backfillWebdavFolders(ctx)
 	if len(failures) > 0 {
 		finish("error", fmt.Errorf("%s", strings.Join(failures, "\n")))
 		return

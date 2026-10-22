@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"golang.org/x/crypto/bcrypt"
 	"gopkg.in/yaml.v3"
 )
 
@@ -130,13 +131,13 @@ func SyncUser(ctx context.Context, docker VolumeRW, volume, containerName, usern
 	found := false
 	for i, u := range cfg.Users {
 		if u.Username == username {
-			cfg.Users[i].Password = password
+			cfg.Users[i].Password = hashPassword(password)
 			found = true
 			break
 		}
 	}
 	if !found {
-		cfg.Users = append(cfg.Users, configUser{Username: username, Password: password, Permissions: "none"})
+		cfg.Users = append(cfg.Users, configUser{Username: username, Password: hashPassword(password), Permissions: "none"})
 	}
 
 	applyRules(cfg, allLDAPUsernames, groupOf, allGroups)
@@ -183,4 +184,16 @@ func RemoveUser(ctx context.Context, docker VolumeRW, volume, containerName, use
 	cfg.Users = kept
 
 	return writeConfig(ctx, docker, volume, containerName, cfg)
+}
+
+// hashPassword stores a login as the {bcrypt} form the WebDAV server
+// understands, so the config file — which ends up in backups — never holds
+// anyone's password in the clear. Cost 8 (not the default 10): the server
+// checks the password on every request and a file browser sends dozens.
+func hashPassword(password string) string {
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), 8)
+	if err != nil {
+		return password // only fails for >72-byte input; fall back rather than lock the user out
+	}
+	return "{bcrypt}" + string(hash)
 }
