@@ -26,6 +26,10 @@ type Server struct {
 	Registry *modules.Registry
 	DB       *pgxpool.Pool
 
+	// DatabaseURL is handed to the throwaway containers that dump and
+	// restore the platform database for backups.
+	DatabaseURL string
+
 	// GatewayContainerName is the internal VPN gateway's fixed container
 	// name (see docker-compose.yaml's internal-gateway service) — needed
 	// to `docker exec` its one-time NetBird enrollment.

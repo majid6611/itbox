@@ -30,4 +30,7 @@ path_routes:
   - path: /api/voip
     service: voip
     port: 8080
+backup_volumes:
+  - asterisk_spool
+  - asterisk_cdr
 internal_panel: /voip

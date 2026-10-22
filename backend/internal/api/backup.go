@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -50,8 +51,8 @@ func (s *Server) saveBackupConfig(ctx context.Context, c BackupConfig) error {
 
 // rcloneRemote resolves the currently-configured backup destination into
 // the env vars rclone needs (no config file — everything via
-// RCLONE_CONFIG_BACKUP_*) and the "backup:<bucket>/webdav" remote path
-// both backup and restore address. Shared by both directions since the
+// RCLONE_CONFIG_BACKUP_*) and the "backup:<bucket>" remote root; callers
+// add "/webdav" or "/platform/..." beneath it. Shared by both directions since the
 // destination is the same either way — only which side of `rclone copy`
 // it lands on differs.
 func (s *Server) rcloneRemote(ctx context.Context) (env map[string]string, remotePath string, err error) {
@@ -72,7 +73,7 @@ func (s *Server) rcloneRemote(ctx context.Context) (env map[string]string, remot
 			"RCLONE_CONFIG_BACKUP_SECRET_ACCESS_KEY": cfg.AWSSecretAccessKey,
 			"RCLONE_CONFIG_BACKUP_REGION":            cfg.AWSRegion,
 		}
-		return env, "backup:" + cfg.AWSBucket + "/webdav", nil
+		return env, "backup:" + cfg.AWSBucket, nil
 	default: // "local"
 		s3Status, ok, err := s.Modules.GetInstalled(ctx, "s3-storage")
 		if err != nil || !ok || s3Status.Status != "running" {
@@ -87,7 +88,7 @@ func (s *Server) rcloneRemote(ctx context.Context) (env map[string]string, remot
 			"RCLONE_CONFIG_BACKUP_ENDPOINT":          endpoint,
 			"RCLONE_CONFIG_BACKUP_REGION":            "garage",
 		}
-		return env, "backup:" + s3Status.Config["default_bucket"] + "/webdav", nil
+		return env, "backup:" + s3Status.Config["default_bucket"], nil
 	}
 }
 
@@ -112,31 +113,62 @@ func (s *Server) startRun(ctx context.Context, kind string) (finish func(status 
 	}, true
 }
 
-// runBackup does one WebDAV -> S3 copy (never sync — see
-// docker.Client.RunRcloneCopy for why), recording the attempt in
-// backup_runs regardless of outcome so the panel can show real history,
-// not just "it's running."
+// platformDumpPath is where the Postgres dump lives under the remote root;
+// module volumes sit beside it at platform/<module>/<volume key>.
+const platformDumpPath = "/platform/db.dump"
+
+// Tables a restore must never touch: the history and
+// settings of the very backup system being used to restore.
+var backupKeepTables = []string{"backup_runs", "backup_runs_id_seq", "backup_config"}
+
+// runBackup copies everything worth keeping to the destination: the WebDAV
+// files, a dump of the platform database, and the data volumes modules
+// opted in to. Always `copy`, never sync — see docker.Client.RunRcloneCopy
+// for why. Each part is attempted even if an earlier one failed, and the
+// run is recorded as an error listing what didn't make it, so one broken
+// module can't silently stop the rest being protected. The attempt is
+// recorded in backup_runs regardless of outcome so the panel can show real
+// history, not just "it's running."
 func (s *Server) runBackup(ctx context.Context) {
 	finish, ok := s.startRun(ctx, "backup")
 	if !ok {
 		return
 	}
 
-	webdavStatus, ok, err := s.Modules.GetInstalled(ctx, "fileshare-webdav")
-	if err != nil || !ok || webdavStatus.Status != "running" {
-		finish("error", fmt.Errorf("install the fileshare (WebDAV) module first — there's nothing to back up"))
-		return
-	}
-	webdavVolume := s.Modules.VolumeName("fileshare-webdav", "webdav_data")
-
-	env, remotePath, err := s.rcloneRemote(ctx)
+	env, root, err := s.rcloneRemote(ctx)
 	if err != nil {
 		finish("error", err)
 		return
 	}
 
-	if _, err := s.Docker.RunRcloneCopy(ctx, webdavVolume, false, webdavBackupNetwork, env, "/data", remotePath); err != nil {
-		finish("error", err)
+	var failures []string
+	fail := func(what string, err error) { failures = append(failures, what+": "+err.Error()) }
+
+	if st, ok, err := s.Modules.GetInstalled(ctx, "fileshare-webdav"); err == nil && ok && st.Status == "running" {
+		volume := s.Modules.VolumeName("fileshare-webdav", "webdav_data")
+		if _, err := s.Docker.RunRcloneCopy(ctx, volume, false, webdavBackupNetwork, env, "/data", root+"/webdav"); err != nil {
+			fail("files", err)
+		}
+	}
+
+	if err := s.Docker.DumpDatabaseToRemote(ctx, webdavBackupNetwork, s.DatabaseURL, env, root+platformDumpPath, backupKeepTables); err != nil {
+		fail("database", err)
+	}
+
+	ids, err := s.Modules.InstalledIDs(ctx)
+	if err != nil {
+		fail("module list", err)
+	}
+	for _, id := range ids {
+		for key, volume := range s.Modules.BackupVolumes(id) {
+			if err := s.Docker.BackupVolume(ctx, volume, webdavBackupNetwork, env, root+"/platform/"+id+"/"+key+".tar.gz"); err != nil {
+				fail(id+" "+key, err)
+			}
+		}
+	}
+
+	if len(failures) > 0 {
+		finish("error", fmt.Errorf("%s", strings.Join(failures, "\n")))
 		return
 	}
 	finish("success", nil)
@@ -160,14 +192,76 @@ func (s *Server) runRestore(ctx context.Context) {
 	}
 	webdavVolume := s.Modules.VolumeName("fileshare-webdav", "webdav_data")
 
-	env, remotePath, err := s.rcloneRemote(ctx)
+	env, root, err := s.rcloneRemote(ctx)
 	if err != nil {
 		finish("error", err)
 		return
 	}
 
-	if _, err := s.Docker.RunRcloneCopy(ctx, webdavVolume, true, webdavBackupNetwork, env, remotePath, "/data"); err != nil {
+	if _, err := s.Docker.RunRcloneCopy(ctx, webdavVolume, true, webdavBackupNetwork, env, root+"/webdav", "/data"); err != nil {
 		finish("error", err)
+		return
+	}
+	finish("success", nil)
+}
+
+// runRestorePlatform is disaster recovery: rebuild this platform from the
+// last backup onto a fresh install. Unlike runRestore it is NOT additive —
+// the database is replaced by the dump (settings, users, wiki, chat,
+// every module's install record), then each module recorded in it is
+// reinstalled from its restored config with its data volumes put back
+// before it starts. The Backup Storage module is skipped: it holds the
+// backup itself and has no data volumes to restore.
+func (s *Server) runRestorePlatform(ctx context.Context) {
+	finish, ok := s.startRun(ctx, "restore-platform")
+	if !ok {
+		return
+	}
+
+	env, root, err := s.rcloneRemote(ctx)
+	if err != nil {
+		finish("error", err)
+		return
+	}
+
+	if err := s.Docker.RestoreDatabaseFromRemote(ctx, webdavBackupNetwork, s.DatabaseURL, env, root+platformDumpPath); err != nil {
+		finish("error", fmt.Errorf("restore database: %w", err))
+		return
+	}
+
+	// The restore swapped the settings under the running process.
+	if err := s.Modules.ReloadSettings(ctx); err != nil {
+		log.Printf("restore: reload settings: %v", err)
+	}
+
+	ids, err := s.Modules.InstalledIDs(ctx)
+	if err != nil {
+		finish("error", err)
+		return
+	}
+	var failures []string
+	for _, id := range ids {
+		if id == "s3-storage" {
+			continue
+		}
+		for key, volume := range s.Modules.BackupVolumes(id) {
+			// Creates the volume if the module has never run on this host.
+			if err := s.Docker.RestoreVolume(ctx, volume, webdavBackupNetwork, env, root+"/platform/"+id+"/"+key+".tar.gz"); err != nil {
+				failures = append(failures, id+" "+key+": "+err.Error())
+			}
+		}
+		if id == "fileshare-webdav" {
+			volume := s.Modules.VolumeName(id, "webdav_data")
+			if _, err := s.Docker.RunRcloneCopy(ctx, volume, true, webdavBackupNetwork, env, root+"/webdav", "/data"); err != nil {
+				failures = append(failures, "files: "+err.Error())
+			}
+		}
+		if err := s.Modules.Reinstall(ctx, id); err != nil {
+			failures = append(failures, id+": "+err.Error())
+		}
+	}
+	if len(failures) > 0 {
+		finish("error", fmt.Errorf("%s", strings.Join(failures, "\n")))
 		return
 	}
 	finish("success", nil)
@@ -178,6 +272,11 @@ func (s *Server) runRestore(ctx context.Context) {
 // company actually needs. Not a real cron daemon: no extra dependency for
 // something this infrequent.
 func (s *Server) startBackupScheduler(ctx context.Context) {
+	// Runs are goroutines of this process, so any row still "running" at
+	// startup belongs to a run that died with the previous process.
+	if _, err := s.DB.Exec(ctx, `UPDATE backup_runs SET finished_at = now(), status = 'error', error_message = 'Interrupted: the platform restarted during this run' WHERE status = 'running'`); err != nil {
+		log.Printf("backup: clear interrupted runs: %v", err)
+	}
 	ticker := time.NewTicker(1 * time.Hour)
 	go func() {
 		defer ticker.Stop()
@@ -312,6 +411,21 @@ func registerBackup(api huma.API, s *Server) {
 			return nil, err
 		}
 		go s.runRestore(context.Background())
+		out := &ModuleActionOutput{}
+		out.Body.Success = true
+		return out, nil
+	})
+
+	huma.Register(api, huma.Operation{
+		OperationID: "run-restore-platform",
+		Method:      "POST",
+		Path:        "/api/backup/restore-platform",
+		Summary:     "Disaster recovery: replace the platform database and module data with the backup, then reinstall every module",
+	}, func(ctx context.Context, in *GetBackupConfigInput) (*ModuleActionOutput, error) {
+		if _, err := s.requireAuth(ctx, in.SessionToken); err != nil {
+			return nil, err
+		}
+		go s.runRestorePlatform(context.Background())
 		out := &ModuleActionOutput{}
 		out.Body.Success = true
 		return out, nil

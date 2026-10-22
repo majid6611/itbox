@@ -28,4 +28,7 @@ soft_dependencies:
 routes:
   - service: radicale
     port: 5232
+backup_volumes:
+  - radicale_config
+  - radicale_data
 internal_panel: /calendar-settings

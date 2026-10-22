@@ -30,6 +30,10 @@ export const useBackupStore = defineStore('backup', {
       await api.post('/backup/run')
       await this.fetchAll()
     },
+    async restorePlatformNow() {
+      await api.post('/backup/restore-platform')
+      await this.fetchAll()
+    },
     async restoreNow() {
       await api.post('/backup/restore')
       await this.fetchAll()

@@ -58,6 +58,20 @@ async function restoreNow() {
   }
 }
 
+async function restorePlatformNow() {
+  if (!confirm('Restore the WHOLE platform from the backup? This REPLACES the current users, settings, wiki, chat and module data with the backup, and reinstalls every module. Only do this on a fresh install after a failure.')) return
+  busy.value = true
+  try {
+    await backup.restorePlatformNow()
+  } finally {
+    busy.value = false
+  }
+}
+
+function kindLabel(kind: string) {
+  return kind === 'backup' ? 'Backup' : kind === 'restore-platform' ? 'Restore everything' : 'Restore files'
+}
+
 function formatTime(iso: string) {
   return new Date(iso).toLocaleString()
 }
@@ -67,9 +81,13 @@ function formatTime(iso: string) {
   <div>
     <h1>Backup</h1>
     <p class="hint">
-      Backs up everyone's WebDAV files to S3-compatible storage — either the
-      backup bucket built into this platform (no setup needed), or your own
-      AWS S3 bucket.
+      Backs up everyone's files plus the platform itself — users, settings,
+      wiki, chat and each module's data — to S3-compatible storage: either
+      the backup bucket built into this platform (no setup needed), or your
+      own AWS S3 bucket. The built-in bucket lives on this same server, so
+      it protects against deleted files but not a dead disk — use AWS for
+      that. "Restore files" only adds files back; "Restore everything" is
+      for rebuilding a fresh install after a failure.
     </p>
 
     <div class="status-row">
@@ -79,7 +97,8 @@ function formatTime(iso: string) {
       </span>
       <span v-if="lastBackup" class="hint-inline">{{ formatTime(lastBackup.started_at) }}</span>
       <button :disabled="busy" @click="runNow">{{ busy ? 'Working…' : 'Back up now' }}</button>
-      <button class="secondary" :disabled="busy" @click="restoreNow">Restore from backup</button>
+      <button class="secondary" :disabled="busy" @click="restoreNow">Restore files</button>
+      <button class="secondary" :disabled="busy" @click="restorePlatformNow">Restore everything…</button>
     </div>
     <p v-if="lastBackup?.status === 'error' && lastBackup.error_message" class="error-message">
       {{ lastBackup.error_message }}
@@ -141,7 +160,7 @@ function formatTime(iso: string) {
       <tbody>
         <tr v-for="r in backup.runs" :key="r.started_at + r.kind">
           <td>{{ formatTime(r.started_at) }}</td>
-          <td>{{ r.kind === 'backup' ? 'Backup' : 'Restore' }}</td>
+          <td>{{ kindLabel(r.kind) }}</td>
           <td><span class="pill" :class="r.status === 'success' ? 'pill-good' : r.status === 'error' ? 'pill-bad' : 'pill-warn'">{{ r.status }}</span></td>
           <td>{{ r.error_message || '—' }}</td>
         </tr>

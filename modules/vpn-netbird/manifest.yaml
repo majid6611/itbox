@@ -55,6 +55,9 @@ config_schema:
 soft_dependencies:
   - id: ldap-openldap
     integration: directory
+backup_volumes:
+  - netbird_config
+  - netbird_data
 internal_panel: /vpn
 # netbird-server itself is NOT routed through the edge nginx at all — its
 # client protocol (gRPC for Management/Signal) can't share nginx's shared

@@ -75,6 +75,12 @@ type Manifest struct {
 	// one specifically needs it now, self-signed cert warning and all.
 	NeedsTLS bool `yaml:"needs_tls,omitempty" json:"needs_tls,omitempty"`
 
+	// BackupVolumes lists this module's compose volume keys (as declared
+	// under the compose file's top-level volumes:) that hold data worth
+	// backing up beyond the shared Postgres — opt-in per module, so
+	// volumes that are only caches or regenerated at start are skipped.
+	BackupVolumes []string `yaml:"backup_volumes,omitempty" json:"-"`
+
 	// InternalPanel is a path in this platform's own frontend (e.g.
 	// "/users") shown as a "Manage" link when the module is running —
 	// for modules whose admin UI is a page we built ourselves rather

@@ -60,6 +60,7 @@ func main() {
 		Modules:              moduleManager,
 		Registry:             registry,
 		DB:                   pool,
+		DatabaseURL:          cfg.DatabaseURL,
 		GatewayContainerName: cfg.GatewayContainerName,
 	}
 	go srv.SyncGatewayRoutesOnStart()

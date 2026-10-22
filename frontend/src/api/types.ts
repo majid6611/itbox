@@ -161,7 +161,7 @@ export interface BackupConfig {
 }
 
 export interface BackupRun {
-  kind: 'backup' | 'restore'
+  kind: 'backup' | 'restore' | 'restore-platform'
   started_at: string
   finished_at?: string
   status: 'running' | 'success' | 'error'

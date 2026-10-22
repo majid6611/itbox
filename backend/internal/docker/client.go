@@ -191,3 +191,103 @@ func (c *Client) run(ctx context.Context, dir string, args ...string) error {
 	}
 	return nil
 }
+
+// DumpDatabaseToRemote streams a pg_dump of the platform database straight
+// into a remote file (rclone rcat) — nothing is staged on disk. The
+// excluded tables are left out entirely, so a restore (which drops and
+// recreates what the dump contains) can't touch them: the backup panel's
+// own history and destination settings are what the operator just used to
+// start the restore, and must survive it.
+func (c *Client) DumpDatabaseToRemote(ctx context.Context, network, databaseURL string, env map[string]string, dst string, excludeTables []string) error {
+	dump := []string{"run", "--rm", "--network", network, "-e", "DBURL=" + databaseURL, "postgres:16-alpine", "sh", "-c"}
+	script := `exec pg_dump -Fc --no-owner`
+	for _, t := range excludeTables {
+		script += " --exclude-table=" + t
+	}
+	dump = append(dump, script+` "$DBURL"`)
+	return c.pipe(ctx, dump, rcloneArgs(network, env, "rcat", dst))
+}
+
+// RestoreDatabaseFromRemote is the reverse: it streams a dump out of the
+// remote and into pg_restore, dropping and recreating every object the dump
+// contains (--clean), so the database ends up as it was at backup time.
+// Single transaction: a failure part-way rolls back instead of leaving the
+// platform with half its tables dropped.
+func (c *Client) RestoreDatabaseFromRemote(ctx context.Context, network, databaseURL string, env map[string]string, src string) error {
+	restore := []string{"run", "--rm", "-i", "--network", network, "-e", "DBURL=" + databaseURL, "postgres:16-alpine",
+		"sh", "-c", `exec pg_restore --clean --if-exists --no-owner --single-transaction -d "$DBURL"`}
+	return c.pipe(ctx, rcloneArgs(network, env, "cat", src), restore)
+}
+
+// rcloneArgs builds a `docker run` for a one-shot rclone subcommand that
+// reads or writes stdin/stdout (-i keeps stdin attached for rcat).
+func rcloneArgs(network string, env map[string]string, sub, path string) []string {
+	args := []string{"run", "--rm", "-i", "--network", network}
+	for k, v := range env {
+		args = append(args, "-e", k+"="+v)
+	}
+	return append(args, "rclone/rclone:latest", sub, path)
+}
+
+// pipe runs `docker <from>` | `docker <to>`, returning the first failure
+// with the failing side's stderr.
+func (c *Client) pipe(ctx context.Context, from, to []string) error {
+	src := exec.CommandContext(ctx, "docker", from...)
+	dst := exec.CommandContext(ctx, "docker", to...)
+	src.Env, dst.Env = safeEnv(), safeEnv()
+	var srcErr, dstErr bytes.Buffer
+	src.Stderr, dst.Stderr = &srcErr, &dstErr
+
+	out, err := src.StdoutPipe()
+	if err != nil {
+		return err
+	}
+	dst.Stdin = out
+	if err := src.Start(); err != nil {
+		return err
+	}
+	if err := dst.Start(); err != nil {
+		_ = src.Process.Kill()
+		_ = src.Wait()
+		return err
+	}
+	dstWait := dst.Wait()
+	srcWait := src.Wait()
+	if srcWait != nil {
+		return fmt.Errorf("%w: %s", srcWait, srcErr.String())
+	}
+	if dstWait != nil {
+		return fmt.Errorf("%w: %s", dstWait, dstErr.String())
+	}
+	return nil
+}
+
+// BackupVolume streams a whole volume as a tar.gz into a remote file.
+// tar rather than `rclone copy` because S3 keeps no owners or modes, and
+// some modules refuse to start without them (OpenLDAP wants its data
+// owned by its own user).
+func (c *Client) BackupVolume(ctx context.Context, volume, network string, env map[string]string, dst string) error {
+	return c.volumeTar(ctx, volume, ":ro", network, env,
+		`tar czf - -C /data . | rclone rcat "$REMOTE"`, dst)
+}
+
+// RestoreVolume unpacks a BackupVolume archive into volume (created if it
+// doesn't exist yet), keeping the archived owners and modes.
+func (c *Client) RestoreVolume(ctx context.Context, volume, network string, env map[string]string, src string) error {
+	return c.volumeTar(ctx, volume, "", network, env,
+		`rclone cat "$REMOTE" | tar xzpf - --numeric-owner -C /data`, src)
+}
+
+func (c *Client) volumeTar(ctx context.Context, volume, mode, network string, env map[string]string, script, remote string) error {
+	args := []string{"run", "--rm", "--network", network, "-v", volume + ":/data" + mode, "-e", "REMOTE=" + remote}
+	for k, v := range env {
+		args = append(args, "-e", k+"="+v)
+	}
+	args = append(args, "--entrypoint", "sh", "rclone/rclone:latest", "-c", "set -o pipefail 2>/dev/null; "+script)
+	cmd := exec.CommandContext(ctx, "docker", args...)
+	cmd.Env = safeEnv()
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("volume %s: %w: %s", volume, err, out)
+	}
+	return nil
+}
