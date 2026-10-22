@@ -57,6 +57,9 @@ withDefaults(defineProps<{ name: string; size?: number }>(), { size: 18 })
       <rect x="7" y="2.5" width="10" height="19" rx="2" />
       <line x1="11" y1="18" x2="13" y2="18" />
     </template>
+    <template v-else-if="name === 'folder'">
+      <path d="M3.5 6.5A1.8 1.8 0 015.3 4.7H9.5l2 2.3h7.2a1.8 1.8 0 011.8 1.8v9.5a1.8 1.8 0 01-1.8 1.8H5.3a1.8 1.8 0 01-1.8-1.8V6.5z" />
+    </template>
     <template v-else-if="name === 'logout'">
       <path d="M9.5 4.5h-4a1.5 1.5 0 00-1.5 1.5v12a1.5 1.5 0 001.5 1.5h4" />
       <line x1="20.5" y1="12" x2="9.5" y2="12" />

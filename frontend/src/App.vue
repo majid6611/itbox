@@ -71,6 +71,9 @@ async function handlePortalLogout() {
         <router-link v-if="portalModules.calendarAvailable" :to="{ name: 'portal-calendar' }">
           <Icon name="calendar" :size="16" /> Calendar
         </router-link>
+        <router-link v-if="portalModules.fileshareHostname" :to="{ name: 'portal-files' }">
+          <Icon name="folder" :size="16" /> Files
+        </router-link>
         <router-link v-if="portalModules.modules.voip" :to="{ name: 'portal-phone' }">
           <Icon name="phone" :size="16" /> Phone
         </router-link>

@@ -126,6 +126,10 @@ type PortalModulesOutput struct {
 		// see radicalefs.CompanyCalendarPath/PersonalCalendarPath for the
 		// paths appended to it.
 		CalendarCalDAVBaseURL string `json:"calendar_caldav_base_url,omitempty"`
+		// FileShareHostname is fileshare-webdav's routed hostname, or "" if
+		// it isn't installed and running. The page builds the full address
+		// from it using the port this site itself was opened on.
+		FileShareHostname string `json:"fileshare_hostname,omitempty"`
 	}
 }
 
@@ -245,6 +249,9 @@ func registerPortal(api huma.API, s *Server) {
 		if status, ok, err := s.Modules.GetInstalled(ctx, "calendar-radicale"); err == nil && ok && status.Status == "running" {
 			out.Body.CalendarAvailable = true
 			out.Body.CalendarCalDAVBaseURL = "http://" + s.Modules.Hostname("calendar-radicale", "")
+		}
+		if status, ok, err := s.Modules.GetInstalled(ctx, "fileshare-webdav"); err == nil && ok && status.Status == "running" {
+			out.Body.FileShareHostname = s.Modules.Hostname("fileshare-webdav", "")
 		}
 		return out, nil
 	})

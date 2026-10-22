@@ -5,7 +5,7 @@ description: >-
   macOS Finder, or Linux file managers. Runs over plain HTTP(S) so it works
   the same on the LAN or remotely, unlike SMB.
 category: storage
-version: "1.0.1"
+version: "1.0.2"
 compose_file: docker-compose.yaml
 config_schema:
   - key: admin_username
@@ -23,10 +23,8 @@ routes:
   - service: webdav
     port: 6065
 connect_note: >-
-  This is the file server address. Use it as a network folder: Windows —
-  File Explorer, "Map network drive"; Mac — Finder, Go, "Connect to
-  Server"; Linux — Files, "Other Locations", "Connect to Server". Sign in with
-  the company username and password. Opening it in a browser only shows a
-  login box.
+  This is the file server address. Open "Manage" for step-by-step
+  instructions to connect from Windows, Mac, Linux and phones.
+internal_panel: /file-share
 backup_volumes:
   - webdav_config

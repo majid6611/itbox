@@ -7,6 +7,7 @@ export const usePortalModulesStore = defineStore('portalModules', {
     videoCallBaseURL: '',
     calendarAvailable: false,
     calendarCalDAVBaseURL: '',
+    fileshareHostname: '',
     checked: false,
   }),
   actions: {
@@ -17,11 +18,13 @@ export const usePortalModulesStore = defineStore('portalModules', {
           video_call_base_url?: string
           calendar_available?: boolean
           calendar_caldav_base_url?: string
+          fileshare_hostname?: string
         }>('/portal/modules')
         this.modules = res.modules ?? {}
         this.videoCallBaseURL = res.video_call_base_url ?? ''
         this.calendarAvailable = res.calendar_available ?? false
         this.calendarCalDAVBaseURL = res.calendar_caldav_base_url ?? ''
+        this.fileshareHostname = res.fileshare_hostname ?? ''
       } finally {
         this.checked = true
       }

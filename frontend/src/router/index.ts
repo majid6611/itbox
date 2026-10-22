@@ -18,6 +18,8 @@ import Wiki from '../views/portal/Wiki.vue'
 import Chat from '../views/portal/Chat.vue'
 import Calendar from '../views/portal/Calendar.vue'
 import Phone from '../views/portal/Phone.vue'
+import Files from '../views/portal/Files.vue'
+import FileShare from '../views/FileShare.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -39,6 +41,8 @@ const router = createRouter({
     { path: '/portal/chat', name: 'portal-chat', component: Chat },
     { path: '/portal/calendar', name: 'portal-calendar', component: Calendar },
     { path: '/portal/phone', name: 'portal-phone', component: Phone },
+    { path: '/portal/files', name: 'portal-files', component: Files },
+    { path: '/file-share', name: 'file-share', component: FileShare },
   ],
 })
 
