@@ -221,6 +221,12 @@ type UserOut struct {
 	// directories predating this feature may have ungrouped users).
 	Group    string `json:"group"`
 	Disabled bool   `json:"disabled"`
+	// LastLogin is the last portal sign-in (RFC 3339), empty if never.
+	LastLogin   string `json:"last_login,omitempty"`
+	LastLoginIP string `json:"last_login_ip,omitempty"`
+	// SignedIn means an unexpired portal session exists (sessions last up
+	// to 7 days) — not that the person is active this minute.
+	SignedIn bool `json:"signed_in"`
 }
 
 // disabledUsernames returns the set of usernames currently marked
@@ -360,11 +366,41 @@ func registerUsers(api huma.API, s *Server) {
 		if err != nil {
 			return nil, internalError("list disabled users", err)
 		}
+		type loginInfo struct {
+			at time.Time
+			ip string
+		}
+		logins := map[string]loginInfo{}
+		if rows, err := s.DB.Query(ctx, `SELECT username, last_login_at, last_ip FROM user_logins`); err == nil {
+			for rows.Next() {
+				var name string
+				var li loginInfo
+				if rows.Scan(&name, &li.at, &li.ip) == nil {
+					logins[name] = li
+				}
+			}
+			rows.Close()
+		}
+		signedIn := map[string]bool{}
+		if rows, err := s.DB.Query(ctx, `SELECT DISTINCT username FROM employee_sessions WHERE expires_at > now()`); err == nil {
+			for rows.Next() {
+				var name string
+				if rows.Scan(&name) == nil {
+					signedIn[name] = true
+				}
+			}
+			rows.Close()
+		}
 		for _, u := range users {
-			out.Body.Users = append(out.Body.Users, UserOut{
+			row := UserOut{
 				Username: u.Username, Email: u.Email, Name: u.Name,
 				Group: byUser[u.Username], Disabled: disabled[u.Username],
-			})
+				SignedIn: signedIn[u.Username] && !disabled[u.Username],
+			}
+			if li, ok := logins[u.Username]; ok {
+				row.LastLogin, row.LastLoginIP = li.at.Format(time.RFC3339), li.ip
+			}
+			out.Body.Users = append(out.Body.Users, row)
 		}
 		return out, nil
 	})
@@ -567,6 +603,9 @@ func registerUsers(api huma.API, s *Server) {
 		}
 		if err := s.Employee.RevokeAll(ctx, in.Username); err != nil {
 			log.Printf("revoke sessions for deleted user %s: %v", in.Username, err)
+		}
+		if _, err := s.DB.Exec(ctx, `DELETE FROM user_logins WHERE username = $1`, in.Username); err != nil {
+			log.Printf("forget sign-ins of deleted user %s: %v", in.Username, err)
 		}
 		// OpenLDAP doesn't automatically clean up a group's `member`
 		// reference when the member entry is deleted (verified: refint is

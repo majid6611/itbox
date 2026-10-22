@@ -1,10 +1,21 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { api } from '../api/client'
+import { useUsersStore } from '../stores/users'
+import { timeAgo } from '../utils/time'
 import { useModulesStore } from '../stores/modules'
 import Icon from '../components/Icon.vue'
 
 const modules = useModulesStore()
+const users = useUsersStore()
+
+// Most recent sign-in first; people who never signed in go last.
+const people = computed(() =>
+  [...users.users]
+    .filter((u) => !u.disabled)
+    .sort((a, b) => (b.last_login ?? '').localeCompare(a.last_login ?? '') || a.username.localeCompare(b.username)),
+)
+const signedInCount = computed(() => people.value.filter((u) => u.signed_in).length)
 
 interface HealthCheck {
   name: string
@@ -16,6 +27,7 @@ const problems = computed(() => (checks.value ?? []).filter((c) => c.status !== 
 
 onMounted(async () => {
   modules.fetchAll()
+  users.fetchAll()
   try {
     checks.value = (await api.get<{ checks: HealthCheck[] }>('/health/report')).checks ?? []
   } catch {
@@ -87,12 +99,80 @@ const attentionCount = computed(() => installed.value.filter((m) => ['stopped', 
         </router-link>
       </div>
       <p v-if="modules.catalog.length === 0" class="hint">No modules in the catalog yet.</p>
+      <div v-if="users.available && people.length" class="card people">
+        <div class="people-head">
+          <h2>People</h2>
+          <span class="hint">{{ signedInCount }} signed in · <router-link to="/users">Manage users</router-link></span>
+        </div>
+        <table class="people-table">
+          <thead>
+            <tr><th>Person</th><th>Group</th><th>Last sign-in</th></tr>
+          </thead>
+          <tbody>
+            <tr v-for="u in people" :key="u.username">
+              <td>
+                <strong>{{ u.name || u.username }}</strong> <span class="uname">{{ u.username }}</span>
+                <span v-if="u.signed_in" class="pill pill-good">signed in</span>
+              </td>
+              <td>{{ u.group || '—' }}</td>
+              <td :title="u.last_login ? new Date(u.last_login).toLocaleString() + (u.last_login_ip ? ' from ' + u.last_login_ip : '') : ''">
+                {{ (u.last_login || !u.signed_in ? timeAgo(u.last_login) : 'earlier (before tracking began)') }}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <p class="hint small">
+          Counts sign-ins to the employee portal. "Signed in" means an open session (they stay signed in for up to a
+          week), not that someone is using it this minute.
+        </p>
+      </div>
       <router-link to="/modules" class="manage-link"><Icon name="modules" :size="15" /> Manage modules</router-link>
     </template>
   </div>
 </template>
 
 <style scoped>
+.people {
+  padding: 1rem 1.2rem;
+  margin: 1.25rem 0;
+  max-width: 44rem;
+}
+.people-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.people-head h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1rem;
+}
+.people-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+.people-table th {
+  text-align: left;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-faint);
+  padding: 0.3rem 0.5rem 0.3rem 0;
+}
+.people-table td {
+  padding: 0.4rem 0.5rem 0.4rem 0;
+  border-top: 1px solid var(--border);
+}
+.uname {
+  color: var(--text-faint);
+  font-size: 0.82rem;
+  margin: 0 0.4rem;
+}
+.hint.small {
+  font-size: 0.78rem;
+  margin: 0.6rem 0 0;
+}
 .health {
   padding: 0.9rem 1.1rem;
   margin-bottom: 1.25rem;

@@ -81,6 +81,9 @@ export interface CompanyUser {
   name: string
   group: string
   disabled: boolean
+  last_login?: string
+  last_login_ip?: string
+  signed_in: boolean
 }
 
 export interface UsersResponse {

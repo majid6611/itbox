@@ -57,6 +57,17 @@ func (s *Service) Login(ctx context.Context, dir *directory.Client, username, pa
 	return token, nil
 }
 
+// RecordLogin remembers that someone just signed in, and from which address,
+// for the dashboard's "who signed in and when".
+func (s *Service) RecordLogin(ctx context.Context, username, ip string) error {
+	_, err := s.db.Exec(ctx, `
+		INSERT INTO user_logins (username, last_login_at, last_ip) VALUES ($1, now(), $2)
+		ON CONFLICT (username) DO UPDATE
+		SET last_login_at = now(), last_ip = $2, login_count = user_logins.login_count + 1
+	`, username, ip)
+	return err
+}
+
 // RevokeAll ends every session a user has. Called when an account is
 // disabled, deleted or has its password reset: without it, a session cookie
 // already in someone's browser would keep working for up to a week after

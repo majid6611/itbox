@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"log"
 	"net/http"
 	"time"
 
@@ -157,6 +158,9 @@ func registerPortal(api huma.API, s *Server) {
 			return nil, huma.Error401Unauthorized("invalid username or password")
 		}
 		s.employeeLoginLimiter.Reset(key)
+		if err := s.Employee.RecordLogin(ctx, in.Body.Username, in.ClientIP); err != nil {
+			log.Printf("record login for %s: %v", in.Body.Username, err)
+		}
 		// The only point in this account's whole lifecycle where its
 		// plaintext password passes through the backend without also
 		// being the moment it was just generated (create/reset already

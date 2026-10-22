@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { timeAgo } from '../utils/time'
 // Where employees log in — shown so the admin knows what to give them.
 const portalAddress = `${window.location.origin}/portal/login`
 
@@ -199,6 +200,7 @@ async function removeGroup(name: string, memberCount: number) {
             <th>Email</th>
             <th>Group</th>
             <th>Status</th>
+            <th>Last sign-in</th>
             <th></th>
           </tr>
         </thead>
@@ -209,6 +211,7 @@ async function removeGroup(name: string, memberCount: number) {
               <td><input v-model="editing[u.username].name" type="text" /></td>
               <td><input v-model="editing[u.username].email" type="email" /></td>
               <td>{{ u.group || '—' }}</td>
+              <td></td>
               <td></td>
               <td class="row-actions">
                 <button :disabled="busy[u.username]" @click="saveEdit(u.username)">Save</button>
@@ -225,6 +228,10 @@ async function removeGroup(name: string, memberCount: number) {
               </td>
               <td>
                 <span class="pill" :class="u.disabled ? 'pill-neutral' : 'pill-good'">{{ u.disabled ? 'disabled' : 'active' }}</span>
+              </td>
+              <td :title="u.last_login ? new Date(u.last_login).toLocaleString() + (u.last_login_ip ? ' from ' + u.last_login_ip : '') : ''">
+                <span v-if="u.signed_in" class="pill pill-good">signed in</span>
+                {{ (u.last_login || !u.signed_in ? timeAgo(u.last_login) : 'earlier (before tracking began)') }}
               </td>
               <td class="row-actions">
                 <button class="secondary" :disabled="busy[u.username]" @click="startEdit(u)">Edit</button>
