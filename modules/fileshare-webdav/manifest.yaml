@@ -22,3 +22,5 @@ soft_dependencies:
 routes:
   - service: webdav
     port: 6065
+backup_volumes:
+  - webdav_config

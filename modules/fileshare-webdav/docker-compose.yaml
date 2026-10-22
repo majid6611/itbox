@@ -7,13 +7,17 @@ networks:
 services:
   # hacdias/webdav has no shell of its own, so (as with the Garage
   # module) a tiny busybox init step writes the config into a shared
-  # named volume before the real container starts.
+  # named volume before the real container starts. Only when there isn't
+  # one yet: logins for other users are added to this file later (see the
+  # backend's syncWebdavLogin), and rewriting it on every container
+  # recreate wiped them back to just the admin.
   webdav-config:
     image: busybox:latest
     restart: "no"
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
+        [ -f /config/config.yml ] && exit 0
         cat > /config/config.yml <<EOF
         address: 0.0.0.0
         port: 6065
