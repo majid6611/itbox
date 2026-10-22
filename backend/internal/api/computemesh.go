@@ -3,6 +3,9 @@ package api
 import (
 	"context"
 	"log"
+	"net"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -122,6 +125,13 @@ type MeshDevicePowerInput struct {
 	}
 }
 
+var deviceHostName = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$`)
+
+// validDeviceHost accepts an IP address or a plain host name, nothing else.
+func validDeviceHost(h string) bool {
+	return net.ParseIP(h) != nil || deviceHostName.MatchString(h)
+}
+
 func registerComputeMesh(api huma.API, s *Server) {
 	huma.Register(api, huma.Operation{
 		OperationID: "list-mesh-devices",
@@ -175,6 +185,23 @@ func registerComputeMesh(api huma.API, s *Server) {
 		}
 		if in.Body.Name == "" || in.Body.Host == "" || in.Body.AMTUsername == "" || in.Body.AMTPassword == "" {
 			return nil, huma.Error400BadRequest("name, host, AMT username, and AMT password are all required")
+		}
+		in.Body.Name = strings.TrimSpace(in.Body.Name)
+		in.Body.Host = strings.TrimSpace(in.Body.Host)
+		if len(in.Body.Name) > 64 || strings.ContainsAny(in.Body.Name, "\r\n\t") {
+			return nil, huma.Error400BadRequest("the name must be 64 characters or fewer, on one line")
+		}
+		if !validDeviceHost(in.Body.Host) {
+			return nil, huma.Error400BadRequest("host must be an IP address or a computer name (letters, digits, dots and dashes)")
+		}
+		// Devices are looked up by name afterwards, so two with the same name
+		// could make a power command reach the wrong computer.
+		var taken bool
+		if err := s.DB.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM compute_mesh_devices WHERE name = $1)`, in.Body.Name).Scan(&taken); err != nil {
+			return nil, internalError("check name", err)
+		}
+		if taken {
+			return nil, huma.Error400BadRequest("a computer with that name is already registered")
 		}
 		if err := client.AddAMTDevice(ctx, meshID, in.Body.Name, in.Body.Host, in.Body.AMTUsername, in.Body.AMTPassword); err != nil {
 			return nil, huma.Error400BadRequest("could not register device", err)
