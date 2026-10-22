@@ -45,6 +45,8 @@ func (s *Service) Login(ctx context.Context, dir *directory.Client, username, pa
 	if err != nil {
 		return "", err
 	}
+	// Sessions nobody will ever use again would otherwise pile up forever.
+	_, _ = s.db.Exec(ctx, `DELETE FROM employee_sessions WHERE expires_at < now()`)
 	_, err = s.db.Exec(ctx,
 		`INSERT INTO employee_sessions (token, username, expires_at) VALUES ($1, $2, $3)`,
 		token, username, time.Now().Add(sessionTTL),
@@ -53,6 +55,16 @@ func (s *Service) Login(ctx context.Context, dir *directory.Client, username, pa
 		return "", err
 	}
 	return token, nil
+}
+
+// RevokeAll ends every session a user has. Called when an account is
+// disabled, deleted or has its password reset: without it, a session cookie
+// already in someone's browser would keep working for up to a week after
+// they had been cut off. Every module checks this same table, so one
+// delete takes access away everywhere at once.
+func (s *Service) RevokeAll(ctx context.Context, username string) error {
+	_, err := s.db.Exec(ctx, `DELETE FROM employee_sessions WHERE username = $1`, username)
+	return err
 }
 
 func (s *Service) Logout(ctx context.Context, token string) error {

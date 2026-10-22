@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"regexp"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -35,6 +36,11 @@ func (s *Server) directoryClient(ctx context.Context) (client *directory.Client,
 // that module is installed and running — a no-op otherwise. Best-effort:
 // the caller logs and moves on if this fails, since the LDAP account/group
 // (the thing that actually matters) already exists by the time this runs.
+// validUsername is deliberately strict: a username becomes a file-share
+// folder name, a calendar URL and an LDAP entry, and anything outside this
+// set breaks at least one of them.
+var validUsername = regexp.MustCompile(`^[a-z][a-z0-9._-]{1,31}$`)
+
 func (s *Server) ensureWebdavFolders(ctx context.Context, names ...string) error {
 	status, ok, err := s.Modules.GetInstalled(ctx, "fileshare-webdav")
 	if err != nil {
@@ -379,6 +385,9 @@ func registerUsers(api huma.API, s *Server) {
 		if !available {
 			return nil, huma.Error400BadRequest("install the Identity module first")
 		}
+		if !validUsername.MatchString(in.Body.Username) {
+			return nil, huma.Error400BadRequest("username must be 2–32 characters: lowercase letters, digits, dot, dash or underscore, starting with a letter")
+		}
 		if in.Body.Group == "" {
 			return nil, huma.Error400BadRequest("group is required")
 		}
@@ -524,6 +533,11 @@ func registerUsers(api huma.API, s *Server) {
 		if err := s.syncCalendarLogin(ctx, in.Username, used); err != nil {
 			log.Printf("sync calendar login for %s: %v", in.Username, err)
 		}
+		// A reset usually means the old password is no longer trusted; any
+		// session opened with it shouldn't outlive it.
+		if err := s.Employee.RevokeAll(ctx, in.Username); err != nil {
+			log.Printf("revoke sessions after reset for %s: %v", in.Username, err)
+		}
 		out := &ResetPasswordOutput{}
 		out.Body.Success = true
 		out.Body.Password = used
@@ -550,6 +564,9 @@ func registerUsers(api huma.API, s *Server) {
 			if err := s.revokeVpnAccess(ctx, nb, in.Username); err != nil {
 				log.Printf("revoke vpn access for deleted user %s: %v", in.Username, err)
 			}
+		}
+		if err := s.Employee.RevokeAll(ctx, in.Username); err != nil {
+			log.Printf("revoke sessions for deleted user %s: %v", in.Username, err)
 		}
 		// OpenLDAP doesn't automatically clean up a group's `member`
 		// reference when the member entry is deleted (verified: refint is
@@ -618,6 +635,9 @@ func registerUsers(api huma.API, s *Server) {
 			if err := s.revokeVpnAccess(ctx, nb, in.Username); err != nil {
 				log.Printf("revoke vpn access for disabled user %s: %v", in.Username, err)
 			}
+		}
+		if err := s.Employee.RevokeAll(ctx, in.Username); err != nil {
+			log.Printf("revoke sessions for disabled user %s: %v", in.Username, err)
 		}
 		if _, err := s.DB.Exec(ctx, `INSERT INTO disabled_users (username) VALUES ($1) ON CONFLICT DO NOTHING`, in.Username); err != nil {
 			return nil, internalError("record disabled state", err)
