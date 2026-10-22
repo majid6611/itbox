@@ -33,6 +33,8 @@ export interface Manifest {
   soft_dependencies: SoftDependency[]
   routes?: ModuleRoute[]
   internal_panel?: string
+  connect_note?: string
+  needs_tls?: boolean
 }
 
 export type ModuleStatusValue = 'not_installed' | 'installing' | 'running' | 'stopped' | 'error'

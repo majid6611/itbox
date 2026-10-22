@@ -81,6 +81,11 @@ type Manifest struct {
 	// volumes that are only caches or regenerated at start are skipped.
 	BackupVolumes []string `yaml:"backup_volumes,omitempty" json:"-"`
 
+	// ConnectNote is a short "how to use this" shown on the module's card
+	// next to its address, for modules people connect to with another
+	// program rather than just a web page (a file share, video calls).
+	ConnectNote string `yaml:"connect_note,omitempty" json:"connect_note,omitempty"`
+
 	// NeedsHostIP asks the platform to fill in HOST_IP: the server's own
 	// address on its main network, for services that must tell clients
 	// where to reach them (see video-jitsi).

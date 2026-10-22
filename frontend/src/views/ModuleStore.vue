@@ -40,7 +40,10 @@ function visibleFields(m: Manifest) {
   return m.config_schema.filter((f) => !f.hidden)
 }
 
-function linkUrl(hostname: string) {
+// A module that needs https is served on the standard https port, not on
+// whatever port this page was opened on.
+function linkUrl(hostname: string, tls = false) {
+  if (tls) return `https://${hostname}`
   const port = window.location.port ? `:${window.location.port}` : ''
   return `${window.location.protocol}//${hostname}${port}`
 }
@@ -168,9 +171,15 @@ async function applyModuleUpdate(id: string) {
               <router-link :to="m.internal_panel">Manage</router-link>
             </li>
             <li v-for="l in modules.links[m.id]" :key="l.name">
-              <a :href="linkUrl(l.hostname)" target="_blank" rel="noopener">{{ l.name || 'Open' }}</a>
+              <a v-if="!isPrivate(m.id)" :href="linkUrl(l.hostname, m.needs_tls)" target="_blank" rel="noopener">{{ l.name || 'Open' }}</a>
+              <span v-else class="private-address">{{ l.name || 'Address' }} (VPN only)</span>
             </li>
           </ul>
+          <div v-if="statusFor(m.id) === 'running' && modules.links[m.id]?.length" class="address-box">
+            <span class="address-label">Address</span>
+            <code>{{ linkUrl(modules.links[m.id][0].hostname, m.needs_tls) }}</code>
+            <p v-if="m.connect_note" class="hint">{{ m.connect_note }}</p>
+          </div>
 
           <div v-if="statusFor(m.id) === 'running' && hasPrimaryRoute(m)" class="visibility">
             <span class="pill" :class="isPrivate(m.id) ? 'pill-neutral' : 'pill-warn'">
@@ -204,6 +213,26 @@ h1 {
   align-items: flex-start;
   justify-content: space-between;
   gap: 1rem;
+}
+.address-box {
+  flex-basis: 100%;
+  margin-top: 0.4rem;
+}
+.address-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-faint);
+  margin-right: 0.5rem;
+}
+.address-box code {
+  user-select: all;
+  font-size: 0.85rem;
+}
+.private-address {
+  font-size: 0.85rem;
+  color: var(--text-dim);
 }
 .update-failed {
   color: var(--danger-text);
