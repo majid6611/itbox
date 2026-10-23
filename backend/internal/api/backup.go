@@ -120,8 +120,9 @@ func (s *Server) startRun(ctx context.Context, kind string) (finish func(status 
 const platformDumpPath = "/platform/db.dump"
 
 // Tables a restore must never touch: the history and
-// settings of the very backup system being used to restore.
-var backupKeepTables = []string{"backup_runs", "backup_runs_id_seq", "backup_config"}
+// settings of the very backup system being used to restore, and the audit
+// log (a restore must never rewind the record of who did what).
+var backupKeepTables = []string{"backup_runs", "backup_runs_id_seq", "backup_config", "audit_log", "audit_log_id_seq"}
 
 // runBackup copies everything worth keeping to the destination: the WebDAV
 // files, a dump of the platform database, and the data volumes modules

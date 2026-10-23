@@ -269,6 +269,29 @@ It lives on the `asterisk_sounds` volume, which is part of the platform
 backup. Menu keys and settings are stored in `voip_ivr_options` and
 `voip_settings`; `pbx.Render` turns them into the `[itp-ivr]` dialplan.
 
+## Audit log
+
+**Logs** in the admin panel shows who did what. Every request that changes
+something (install a module, create a user, change a setting, ...) is recorded
+automatically by one middleware (`backend/internal/api/audit.go`) — a new
+endpoint is covered without anyone remembering to add a call. Sign-ins, failed
+sign-ins and lockouts (admin and employee portal) are recorded by their own
+handlers, with the name that was tried. Request bodies are never stored: they
+carry passwords and keys.
+
+- **Append-only.** The database refuses edits, and refuses deletes of anything
+  younger than one year (`0017_audit_log.sql`). Entries older than a year are
+  pruned daily.
+- **Tamper-evident.** Each entry holds the hash of the one before it; "Check
+  the log is intact" re-walks the chain and names the first entry that was
+  changed or removed. This shows tampering; it can't prevent it by someone with
+  full control of the server.
+- **Restore never rewinds it.** `audit_log` is in `backupKeepTables`, so
+  "Restore everything" leaves it alone (and it isn't part of the backup dump).
+- Downloads (CSV) are recorded too.
+
+Tests that need a real Postgres skip unless `TEST_DATABASE_URL` is set.
+
 ## Firewall
 
 `install.sh` offers to install a host firewall (`scripts/firewall.nft`,

@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
+
+	"it-platform/backend/internal/audit"
 )
 
 const employeeSessionCookieName = "itp_employee_session"
@@ -143,6 +145,7 @@ func registerPortal(api huma.API, s *Server) {
 	}, func(ctx context.Context, in *PortalLoginInput) (*PortalLoginOutput, error) {
 		key := rateLimitKey(in.ClientIP)
 		if !s.employeeLoginLimiter.Allowed(key) {
+			s.Audit.Record(audit.Entry{Actor: in.Body.Username, ActorKind: "employee", Action: "portal-login-blocked", IP: in.ClientIP, Status: 429})
 			return nil, huma.Error429TooManyRequests("too many failed login attempts — try again later")
 		}
 		dirClient, available, err := s.directoryClient(ctx)
@@ -155,9 +158,11 @@ func registerPortal(api huma.API, s *Server) {
 		token, err := s.Employee.Login(ctx, dirClient, in.Body.Username, in.Body.Password)
 		if err != nil {
 			s.employeeLoginLimiter.RecordFailure(key)
+			s.Audit.Record(audit.Entry{Actor: in.Body.Username, ActorKind: "employee", Action: "portal-login-failed", IP: in.ClientIP, Status: 401})
 			return nil, huma.Error401Unauthorized("invalid username or password")
 		}
 		s.employeeLoginLimiter.Reset(key)
+		s.Audit.Record(audit.Entry{Actor: in.Body.Username, ActorKind: "employee", Action: "portal-login", IP: in.ClientIP, Status: 200})
 		if err := s.Employee.RecordLogin(ctx, in.Body.Username, in.ClientIP); err != nil {
 			log.Printf("record login for %s: %v", in.Body.Username, err)
 		}

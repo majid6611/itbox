@@ -5,6 +5,7 @@ import Login from '../views/Login.vue'
 import Dashboard from '../views/Dashboard.vue'
 import ModuleStore from '../views/ModuleStore.vue'
 import Users from '../views/Users.vue'
+import Logs from '../views/Logs.vue'
 import Vpn from '../views/Vpn.vue'
 import Settings from '../views/Settings.vue'
 import About from '../views/About.vue'
@@ -28,6 +29,7 @@ const router = createRouter({
     { path: '/', name: 'dashboard', component: Dashboard },
     { path: '/modules', name: 'modules', component: ModuleStore },
     { path: '/users', name: 'users', component: Users },
+    { path: '/logs', name: 'logs', component: Logs },
     { path: '/vpn', name: 'vpn', component: Vpn },
     { path: '/settings', name: 'settings', component: Settings },
     { path: '/about', name: 'about', component: About },

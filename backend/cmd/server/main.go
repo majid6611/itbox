@@ -13,6 +13,7 @@ import (
 	"it-platform/backend/internal/employee"
 	"it-platform/backend/internal/modules"
 	"it-platform/backend/internal/proxy"
+	"it-platform/backend/internal/audit"
 	"it-platform/backend/internal/registryclient"
 )
 
@@ -61,6 +62,7 @@ func main() {
 		Modules:              moduleManager,
 		Registry:             registry,
 		DB:                   pool,
+		Audit:                audit.NewService(pool),
 		DatabaseURL:          cfg.DatabaseURL,
 		SnapshotDir:          cfg.SnapshotDir,
 		GatewayContainerName: cfg.GatewayContainerName,

@@ -11,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"it-platform/backend/internal/audit"
 	"it-platform/backend/internal/auth"
 	"it-platform/backend/internal/docker"
 	"it-platform/backend/internal/employee"
@@ -25,6 +26,7 @@ type Server struct {
 	Modules  *modules.Manager
 	Registry *modules.Registry
 	DB       *pgxpool.Pool
+	Audit    *audit.Service
 
 	// DatabaseURL is handed to the throwaway containers that dump and
 	// restore the platform database for backups.
@@ -84,6 +86,8 @@ func NewRouter(s *Server) http.Handler {
 	s.adminLoginLimiter = ratelimit.New(loginRateLimitMax, loginRateLimitWindow)
 	s.employeeLoginLimiter = ratelimit.New(loginRateLimitMax, loginRateLimitWindow)
 
+	api.UseMiddleware(s.auditMiddleware)
+
 	registerHealth(api, s)
 	registerHealthReport(api, s)
 	registerAuth(api, s)
@@ -98,7 +102,9 @@ func NewRouter(s *Server) http.Handler {
 	registerCalendar(api, s)
 	registerCalendarSettings(api, s)
 	registerPortal(api, s)
+	registerAudit(api, s)
 
+	s.Audit.StartPruning(context.Background())
 	s.startBackupScheduler(context.Background())
 
 	return router

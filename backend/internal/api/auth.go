@@ -7,6 +7,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"it-platform/backend/internal/audit"
 	"it-platform/backend/internal/auth"
 )
 
@@ -61,17 +62,20 @@ func registerAuth(api huma.API, s *Server) {
 	}, func(ctx context.Context, in *LoginInput) (*LoginOutput, error) {
 		key := rateLimitKey(in.ClientIP)
 		if !s.adminLoginLimiter.Allowed(key) {
+			s.Audit.Record(audit.Entry{Actor: in.Body.Email, ActorKind: "admin", Action: "login-blocked", IP: in.ClientIP, Status: 429})
 			return nil, huma.Error429TooManyRequests("too many failed login attempts — try again later")
 		}
 		token, err := s.Auth.Login(ctx, in.Body.Email, in.Body.Password)
 		if err != nil {
 			s.adminLoginLimiter.RecordFailure(key)
+			s.Audit.Record(audit.Entry{Actor: in.Body.Email, ActorKind: "admin", Action: "login-failed", IP: in.ClientIP, Status: 401})
 			if err == auth.ErrInvalidCredentials {
 				return nil, huma.Error401Unauthorized("invalid email or password")
 			}
 			return nil, internalError("login failed", err)
 		}
 		s.adminLoginLimiter.Reset(key)
+		s.Audit.Record(audit.Entry{Actor: in.Body.Email, ActorKind: "admin", Action: "login", IP: in.ClientIP, Status: 200})
 		out := &LoginOutput{}
 		out.SetCookie = (&http.Cookie{
 			Name:     sessionCookieName,

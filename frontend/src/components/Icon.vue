@@ -42,6 +42,12 @@ withDefaults(defineProps<{ name: string; size?: number }>(), { size: 18 })
     <template v-else-if="name === 'chat'">
       <path d="M4 5.5A1.5 1.5 0 015.5 4h13A1.5 1.5 0 0120 5.5v10a1.5 1.5 0 01-1.5 1.5H9l-4.5 4v-4H5.5A1.5 1.5 0 014 15.5v-10z" />
     </template>
+    <template v-else-if="name === 'logs'">
+      <rect x="5" y="3.5" width="14" height="17" rx="1.8" />
+      <line x1="8.5" y1="8.5" x2="15.5" y2="8.5" />
+      <line x1="8.5" y1="12" x2="15.5" y2="12" />
+      <line x1="8.5" y1="15.5" x2="12.5" y2="15.5" />
+    </template>
     <template v-else-if="name === 'info'">
       <circle cx="12" cy="12" r="8.5" />
       <line x1="12" y1="11" x2="12" y2="16.5" />
