@@ -63,6 +63,7 @@ const sessionCookieName = "itp_session"
 func apiConfig() huma.Config {
 	config := huma.DefaultConfig("IT Platform API", "0.1.0")
 	config.CreateHooks = nil
+	config.Transformers = append(config.Transformers, emptyLists)
 	return config
 }
 

@@ -345,6 +345,7 @@ func registerUsers(api huma.API, s *Server) {
 			return nil, internalError("check identity module", err)
 		}
 		out := &ListUsersOutput{}
+		out.Body.Users = []UserOut{}
 		out.Body.Available = available
 		if !available {
 			return out, nil

@@ -14,7 +14,7 @@ export const useGroupsStore = defineStore('groups', {
       try {
         const res = await api.get<GroupsResponse>('/groups')
         this.available = res.available
-        this.groups = res.groups
+        this.groups = res.groups ?? []
       } finally {
         this.loading = false
       }

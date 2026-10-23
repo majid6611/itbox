@@ -14,7 +14,7 @@ export const useUsersStore = defineStore('users', {
       try {
         const res = await api.get<UsersResponse>('/users')
         this.available = res.available
-        this.users = res.users
+        this.users = res.users ?? []
       } finally {
         this.loading = false
       }

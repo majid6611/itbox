@@ -49,7 +49,10 @@ func registerGroups(api huma.API, s *Server) {
 		if err != nil {
 			return nil, internalError("check identity module", err)
 		}
+		// Empty lists, not nil: a nil slice is sent as JSON null and the
+		// page crashes reading its length.
 		out := &ListGroupsOutput{}
+		out.Body.Groups = []GroupOut{}
 		out.Body.Available = available
 		if !available {
 			return out, nil
@@ -59,7 +62,7 @@ func registerGroups(api huma.API, s *Server) {
 			return nil, internalError("list groups", err)
 		}
 		for _, g := range groups {
-			out.Body.Groups = append(out.Body.Groups, GroupOut{Name: g.Name, Members: g.Members})
+			out.Body.Groups = append(out.Body.Groups, GroupOut{Name: g.Name, Members: append([]string{}, g.Members...)})
 		}
 		return out, nil
 	})
