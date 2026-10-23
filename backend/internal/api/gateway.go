@@ -112,14 +112,13 @@ func (s *Server) syncGatewayRoutes(ctx context.Context) error {
 		return nil // VPN not installed/bootstrapped — nothing to route
 	}
 
-	var officeNetwork string
-	if err := s.DB.QueryRow(ctx, `SELECT vpn_office_network FROM platform_settings WHERE id = true`).Scan(&officeNetwork); err != nil {
+	var officeNetwork, officePorts string
+	if err := s.DB.QueryRow(ctx, `SELECT vpn_office_network, vpn_office_ports FROM platform_settings WHERE id = true`).Scan(&officeNetwork, &officePorts); err != nil {
 		return fmt.Errorf("load office network setting: %w", err)
 	}
+	// The office network is a NetBird "network" (see syncOfficeNetwork), not
+	// a route; a route with that name is left over from before and goes.
 	want := map[string]string{internalServicesRouteID: internalServicesCIDR}
-	if officeNetwork != "" {
-		want[officeNetworkRouteID] = officeNetwork
-	}
 
 	groupID, err := s.ensureAccessPolicy(ctx, client)
 	if err != nil {
@@ -158,16 +157,121 @@ func (s *Server) syncGatewayRoutes(ctx context.Context) error {
 		if have[id] {
 			continue
 		}
-		desc := "internal services gateway"
-		if id == officeNetworkRouteID {
-			desc = "office network"
-		}
-		if err := client.CreateRoute(ctx, id, cidr, desc, peerID, groupID); err != nil {
+		if err := client.CreateRoute(ctx, id, cidr, "internal services gateway", peerID, groupID); err != nil {
 			return fmt.Errorf("create route %s: %w", id, err)
 		}
 		log.Printf("gateway routes: added %s (%s)", id, cidr)
 	}
-	return nil
+	return s.syncOfficeNetwork(ctx, client, groupID, peerID, officeNetwork, officePorts)
+}
+
+// officeNetworkName names both the NetBird network and (with the group below)
+// what the access policy points at.
+const (
+	officeNetworkName = "office"
+	officeGroupName   = "office-lan"
+	officePolicyName  = "office access"
+)
+
+// syncOfficeNetwork makes NetBird's office network match the settings: the
+// office LAN reachable through the gateway, by approved devices only, on
+// exactly the ports the admin allowed. With the office network off it
+// removes all of it. Converges rather than just creating, like the routes.
+//
+// It uses a NetBird network rather than a route because only networks have
+// their access decided by a policy, which is what carries the port list.
+func (s *Server) syncOfficeNetwork(ctx context.Context, nb *netbird.Client, approvedGroupID, gatewayPeerID, cidr, ports string) error {
+	networks, err := nb.ListNetworks(ctx)
+	if err != nil {
+		return err
+	}
+	var network *netbird.Network
+	for i := range networks {
+		if networks[i].Name == officeNetworkName {
+			network = &networks[i]
+		}
+	}
+
+	if cidr == "" {
+		if network != nil {
+			if err := nb.DeleteNetwork(ctx, network.ID); err != nil {
+				return err
+			}
+			log.Printf("office network: removed")
+		}
+		return nb.DeletePoliciesWithPrefix(ctx, officePolicyName, nil)
+	}
+
+	rules, err := parseOfficePorts(ports)
+	if err != nil {
+		return err
+	}
+	groups, err := nb.ListGroups(ctx)
+	if err != nil {
+		return err
+	}
+	var lanGroupID string
+	for _, g := range groups {
+		if g.Name == officeGroupName {
+			lanGroupID = g.ID
+		}
+	}
+	if lanGroupID == "" {
+		g, err := nb.CreateGroup(ctx, officeGroupName)
+		if err != nil {
+			return err
+		}
+		lanGroupID = g.ID
+	}
+
+	if network == nil {
+		if network, err = nb.CreateNetwork(ctx, officeNetworkName); err != nil {
+			return err
+		}
+		log.Printf("office network: added (%s)", cidr)
+	}
+
+	routers, err := nb.ListRouters(ctx, network.ID)
+	if err != nil {
+		return err
+	}
+	haveRouter := false
+	for _, r := range routers {
+		if r.Peer == gatewayPeerID && !haveRouter {
+			haveRouter = true
+			continue
+		}
+		if err := nb.DeleteRouter(ctx, network.ID, r.ID); err != nil {
+			return err
+		}
+	}
+	if !haveRouter {
+		if err := nb.CreateRouter(ctx, network.ID, gatewayPeerID); err != nil {
+			return err
+		}
+	}
+
+	resources, err := nb.ListResources(ctx, network.ID)
+	if err != nil {
+		return err
+	}
+	haveResource := false
+	for _, r := range resources {
+		if r.Address == cidr && !haveResource {
+			haveResource = true
+			continue
+		}
+		if err := nb.DeleteResource(ctx, network.ID, r.ID); err != nil {
+			return err
+		}
+	}
+	if !haveResource {
+		if err := nb.CreateResource(ctx, network.ID, "office LAN", cidr, []string{lanGroupID}); err != nil {
+			return err
+		}
+	}
+
+	return nb.SetRulePolicies(ctx, officePolicyName, approvedGroupID, lanGroupID, rules)
 }
 
 // gatewayPeer finds the internal gateway's own NetBird peer.

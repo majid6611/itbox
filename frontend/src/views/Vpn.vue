@@ -11,6 +11,22 @@ const twoFactorError = ref('')
 
 const officeEnabled = ref(false)
 const officeNetwork = ref('')
+// What people on the VPN may use on the office network. Empty list of
+// choices means "everything"; otherwise the ticked services plus anything
+// typed under "Other" are sent to the server as one list like
+// "tcp/445,tcp/3389,icmp".
+const officePresets = [
+  { key: 'files', label: 'File sharing (Windows, Mac, NAS)', items: ['tcp/445'] },
+  { key: 'rdp', label: 'Remote Desktop', items: ['tcp/3389'] },
+  { key: 'ssh', label: 'SSH', items: ['tcp/22'] },
+  { key: 'web', label: 'Websites and web apps', items: ['tcp/80', 'tcp/443'] },
+  { key: 'print', label: 'Printers', items: ['tcp/9100', 'tcp/631', 'tcp/515'] },
+  { key: 'phones', label: 'Office phones (calls and audio)', items: ['udp/5060', 'udp/20000-20999'] },
+  { key: 'ping', label: 'Ping', items: ['icmp'] },
+]
+const officeEverything = ref(true)
+const officeChecked = ref<string[]>([])
+const officeOther = ref('')
 const officeSaving = ref(false)
 const officeSaved = ref(false)
 const officeError = ref('')
@@ -21,14 +37,35 @@ onMounted(async () => {
   await vpn.fetchOfficeNetwork().catch(() => {})
   officeEnabled.value = vpn.office.enabled
   officeNetwork.value = vpn.office.network || vpn.office.detected
+  loadOfficePorts(vpn.office.ports)
 })
+
+function loadOfficePorts(saved: string) {
+  const items = saved.split(',').map((x) => x.trim()).filter(Boolean)
+  officeEverything.value = items.length === 0
+  officeChecked.value = officePresets.filter((p) => p.items.every((i) => items.includes(i))).map((p) => p.key)
+  const known = officePresets.filter((p) => officeChecked.value.includes(p.key)).flatMap((p) => p.items)
+  officeOther.value = items.filter((i) => !known.includes(i)).join(', ')
+}
+
+function officePortList() {
+  if (officeEverything.value) return ''
+  const items = officePresets.filter((p) => officeChecked.value.includes(p.key)).flatMap((p) => p.items)
+  const other = officeOther.value.split(',').map((x) => x.trim()).filter(Boolean)
+  return [...items, ...other].join(',')
+}
 
 async function saveOffice() {
   officeSaving.value = true
   officeSaved.value = false
   officeError.value = ''
   try {
-    await vpn.saveOfficeNetwork(officeEnabled.value, officeNetwork.value)
+    if (officeEnabled.value && !officeEverything.value && !officePortList()) {
+      officeError.value = 'Pick at least one thing people may use, or choose "everything"'
+      officeSaving.value = false
+      return
+    }
+    await vpn.saveOfficeNetwork(officeEnabled.value, officeNetwork.value, officePortList())
     officeSaved.value = true
   } catch (e) {
     let msg = 'Could not save'
@@ -197,7 +234,8 @@ async function disable(username: string) {
       <p class="hint">
         Let people on the VPN reach the computers at the office — file shares, printers, remote
         desktop and office phones — as if they were plugged in there. Off means they can only reach
-        this platform's own services.
+        this platform's own services. You can allow everything, or only the services you pick. This
+        applies to every computer on the office network, and only to devices you have approved.
       </p>
       <form class="office-form" @submit.prevent="saveOffice">
         <label class="check">
@@ -211,6 +249,23 @@ async function disable(username: string) {
             This server is on <code>{{ vpn.office.detected }}</code>
           </span>
         </label>
+        <div v-if="officeEnabled" class="ports">
+          <label class="check">
+            <input v-model="officeEverything" type="radio" :value="true" /> Everything on the office network
+          </label>
+          <label class="check">
+            <input v-model="officeEverything" type="radio" :value="false" /> Only these:
+          </label>
+          <div v-if="!officeEverything" class="port-list">
+            <label v-for="p in officePresets" :key="p.key" class="check">
+              <input v-model="officeChecked" type="checkbox" :value="p.key" /> {{ p.label }}
+            </label>
+            <label>
+              Other <span class="hint-inline">(for example <code>tcp/8080, udp/5000-5100</code>)</span>
+              <input v-model.trim="officeOther" type="text" placeholder="tcp/8080" />
+            </label>
+          </div>
+        </div>
         <div class="save-row">
           <button :disabled="officeSaving || !vpn.office.available">{{ officeSaving ? 'Saving…' : 'Save' }}</button>
           <span v-if="officeSaved" class="saved">Saved — VPN devices pick this up within a minute.</span>
@@ -279,6 +334,17 @@ async function disable(username: string) {
   flex-direction: row;
   align-items: center;
   gap: 0.5rem;
+}
+.ports {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.port-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-left: 1.5rem;
 }
 .save-row {
   display: flex;

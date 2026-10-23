@@ -178,3 +178,31 @@ func (c *Client) Getvar(ctx context.Context, variable string) (string, error) {
 	}
 	return resp["Value"], nil
 }
+
+// Listen holds one session open and calls fn for every event Asterisk sends,
+// until ctx ends. If the connection drops (Asterisk restarting, say) it
+// reconnects after a few seconds. Unlike the one-shot calls above it is
+// meant to sit idle for hours, so it clears the dial-time deadline.
+func (c *Client) Listen(ctx context.Context, fn func(Message)) {
+	for ctx.Err() == nil {
+		if s, err := c.open(ctx); err == nil {
+			s.conn.SetDeadline(time.Time{})
+			stop := context.AfterFunc(ctx, func() { s.conn.Close() })
+			for {
+				m, err := s.read()
+				if err != nil {
+					break
+				}
+				if m["Event"] != "" {
+					fn(m)
+				}
+			}
+			stop()
+			s.conn.Close()
+		}
+		select {
+		case <-ctx.Done():
+		case <-time.After(5 * time.Second):
+		}
+	}
+}

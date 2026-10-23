@@ -10,7 +10,7 @@ export const useVpnStore = defineStore('vpn', {
     devices: [] as VpnUsersResponse['devices'],
     loading: false,
     // Office LAN access through the VPN — see GET /api/vpn/office-network.
-    office: { available: false, enabled: false, network: '', detected: '' },
+    office: { available: false, enabled: false, network: '', ports: '', detected: '' },
     twoFactor: false,
   }),
   actions: {
@@ -40,12 +40,12 @@ export const useVpnStore = defineStore('vpn', {
       this.twoFactor = (await api.put<{ enabled: boolean }>('/vpn/two-factor', { enabled })).enabled
     },
     async fetchOfficeNetwork() {
-      this.office = await api.get<{ available: boolean; enabled: boolean; network: string; detected: string }>(
+      this.office = await api.get<{ available: boolean; enabled: boolean; network: string; ports: string; detected: string }>(
         '/vpn/office-network',
       )
     },
-    async saveOfficeNetwork(enabled: boolean, network: string) {
-      await api.put('/vpn/office-network', { enabled, network })
+    async saveOfficeNetwork(enabled: boolean, network: string, ports: string) {
+      await api.put('/vpn/office-network', { enabled, network, ports })
       await this.fetchOfficeNetwork()
     },
     async approveDevice(id: string) {

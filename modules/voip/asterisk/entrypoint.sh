@@ -31,7 +31,7 @@ bindaddr = ${AMI_BIND}
 secret = ${AMI_SECRET}
 deny = 0.0.0.0/0.0.0.0
 permit = ${EDGE_PREFIX}0/255.255.255.0
-read = system,call,reporting
+read = system,call,reporting,security
 write = system,command,reporting
 EOF
 

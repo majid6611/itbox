@@ -74,6 +74,8 @@ func main() {
 		log.Fatalf("write asterisk config: %v", err)
 	}
 
+	go s.WatchSecurity(ctx)
+
 	log.Printf("voip module listening on %s", listenAddr)
 	if err := http.ListenAndServe(listenAddr, api.NewRouter(s)); err != nil {
 		log.Fatalf("server: %v", err)

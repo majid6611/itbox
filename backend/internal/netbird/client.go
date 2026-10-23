@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -374,6 +375,184 @@ func (c *Client) CreateLocalUser(ctx context.Context, email, name string, autoGr
 func (c *Client) DeleteUser(ctx context.Context, id string) error {
 	if err := c.do(ctx, http.MethodDelete, "/api/users/"+id, nil, nil); err != nil {
 		return fmt.Errorf("delete user: %w", err)
+	}
+	return nil
+}
+
+// A NetBird "network" is a set of addresses reachable through a router peer,
+// with access to them controlled by ordinary policies — which is what makes
+// per-port rules possible (the older route kind lets everything through).
+type Network struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+type Router struct {
+	ID   string `json:"id"`
+	Peer string `json:"peer"`
+}
+
+type Resource struct {
+	ID      string `json:"id"`
+	Address string `json:"address"`
+}
+
+func (c *Client) ListNetworks(ctx context.Context) ([]Network, error) {
+	var out []Network
+	if err := c.do(ctx, http.MethodGet, "/api/networks", nil, &out); err != nil {
+		return nil, fmt.Errorf("list networks: %w", err)
+	}
+	return out, nil
+}
+
+func (c *Client) CreateNetwork(ctx context.Context, name string) (*Network, error) {
+	var out Network
+	if err := c.do(ctx, http.MethodPost, "/api/networks", map[string]any{"name": name}, &out); err != nil {
+		return nil, fmt.Errorf("create network: %w", err)
+	}
+	return &out, nil
+}
+
+// DeleteNetwork also removes the network's routers and resources.
+func (c *Client) DeleteNetwork(ctx context.Context, id string) error {
+	if err := c.do(ctx, http.MethodDelete, "/api/networks/"+id, nil, nil); err != nil {
+		return fmt.Errorf("delete network: %w", err)
+	}
+	return nil
+}
+
+func (c *Client) ListRouters(ctx context.Context, networkID string) ([]Router, error) {
+	var out []Router
+	if err := c.do(ctx, http.MethodGet, "/api/networks/"+networkID+"/routers", nil, &out); err != nil {
+		return nil, fmt.Errorf("list routers: %w", err)
+	}
+	return out, nil
+}
+
+func (c *Client) CreateRouter(ctx context.Context, networkID, peerID string) error {
+	err := c.do(ctx, http.MethodPost, "/api/networks/"+networkID+"/routers", map[string]any{
+		"peer":       peerID,
+		"metric":     100,
+		"masquerade": true,
+		"enabled":    true,
+	}, nil)
+	if err != nil {
+		return fmt.Errorf("create router: %w", err)
+	}
+	return nil
+}
+
+func (c *Client) DeleteRouter(ctx context.Context, networkID, id string) error {
+	if err := c.do(ctx, http.MethodDelete, "/api/networks/"+networkID+"/routers/"+id, nil, nil); err != nil {
+		return fmt.Errorf("delete router: %w", err)
+	}
+	return nil
+}
+
+func (c *Client) ListResources(ctx context.Context, networkID string) ([]Resource, error) {
+	var out []Resource
+	if err := c.do(ctx, http.MethodGet, "/api/networks/"+networkID+"/resources", nil, &out); err != nil {
+		return nil, fmt.Errorf("list resources: %w", err)
+	}
+	return out, nil
+}
+
+// CreateResource adds an address range to a network; a policy that names one
+// of groupIDs as its destination is what lets devices reach it.
+func (c *Client) CreateResource(ctx context.Context, networkID, name, address string, groupIDs []string) error {
+	err := c.do(ctx, http.MethodPost, "/api/networks/"+networkID+"/resources", map[string]any{
+		"name":    name,
+		"address": address,
+		"enabled": true,
+		"groups":  groupIDs,
+	}, nil)
+	if err != nil {
+		return fmt.Errorf("create resource: %w", err)
+	}
+	return nil
+}
+
+func (c *Client) DeleteResource(ctx context.Context, networkID, id string) error {
+	if err := c.do(ctx, http.MethodDelete, "/api/networks/"+networkID+"/resources/"+id, nil, nil); err != nil {
+		return fmt.Errorf("delete resource: %w", err)
+	}
+	return nil
+}
+
+// PortRange is an inclusive range of ports.
+type PortRange struct {
+	Start int `json:"start"`
+	End   int `json:"end"`
+}
+
+// PolicyRule lets devices in Source reach Destination over one protocol
+// ("all", "tcp", "udp" or "icmp"), on the listed ports if any (every port
+// when both lists are empty).
+type PolicyRule struct {
+	Protocol   string
+	Ports      []string
+	PortRanges []PortRange
+}
+
+// SetRulePolicies makes the policies "<prefix> 1", "<prefix> 2", ... match
+// rules: one policy per rule, each from the source group to the destination
+// group. One policy per rule, not one policy with several rules, because
+// NetBird only applies the first rule of a policy to traffic going to a
+// network (found by testing: a TCP rule followed by an ICMP rule silently
+// blocked the ping). Policies left over from a longer earlier list go.
+func (c *Client) SetRulePolicies(ctx context.Context, prefix, sourceID, destinationID string, rules []PolicyRule) error {
+	policies, err := c.ListPolicies(ctx)
+	if err != nil {
+		return err
+	}
+	existing := map[string]string{} // name -> id
+	for _, p := range policies {
+		existing[p.Name] = p.ID
+	}
+	wanted := map[string]bool{}
+	for i, r := range rules {
+		name := fmt.Sprintf("%s %d", prefix, i+1)
+		wanted[name] = true
+		rule := map[string]any{
+			"name":          name,
+			"enabled":       true,
+			"action":        "accept",
+			"bidirectional": false,
+			"protocol":      r.Protocol,
+			"sources":       []string{sourceID},
+			"destinations":  []string{destinationID},
+		}
+		if len(r.Ports) > 0 {
+			rule["ports"] = r.Ports
+		}
+		if len(r.PortRanges) > 0 {
+			rule["port_ranges"] = r.PortRanges
+		}
+		body := map[string]any{"name": name, "enabled": true, "rules": []map[string]any{rule}}
+		if id, ok := existing[name]; ok {
+			if err := c.do(ctx, http.MethodPut, "/api/policies/"+id, body, nil); err != nil {
+				return fmt.Errorf("update policy: %w", err)
+			}
+		} else if err := c.do(ctx, http.MethodPost, "/api/policies", body, nil); err != nil {
+			return fmt.Errorf("create policy: %w", err)
+		}
+	}
+	return c.DeletePoliciesWithPrefix(ctx, prefix, wanted)
+}
+
+// DeletePoliciesWithPrefix removes every policy named "<prefix> <something>"
+// except those in keep.
+func (c *Client) DeletePoliciesWithPrefix(ctx context.Context, prefix string, keep map[string]bool) error {
+	policies, err := c.ListPolicies(ctx)
+	if err != nil {
+		return err
+	}
+	for _, p := range policies {
+		if strings.HasPrefix(p.Name, prefix+" ") && !keep[p.Name] {
+			if err := c.DeletePolicy(ctx, p.ID); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }

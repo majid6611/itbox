@@ -22,6 +22,9 @@ type OfficeNetworkOutput struct {
 		Enabled   bool `json:"enabled"`
 		// Network is the saved office LAN (CIDR), "" when off.
 		Network string `json:"network"`
+		// Ports is what people on the VPN may use on that network:
+		// "" for everything, else a list like "tcp/445,tcp/3389,icmp".
+		Ports string `json:"ports"`
 		// Detected is the LAN this server itself is plugged into — the
 		// suggested value when turning the setting on. "" if it couldn't
 		// be worked out.
@@ -34,6 +37,7 @@ type SaveOfficeNetworkInput struct {
 	Body         struct {
 		Enabled bool   `json:"enabled"`
 		Network string `json:"network"`
+		Ports   string `json:"ports"`
 	}
 }
 
@@ -138,7 +142,7 @@ func registerOfficeNetwork(api huma.API, s *Server) {
 			return nil, internalError("check vpn module", err)
 		}
 		out.Body.Available = available
-		if err := s.DB.QueryRow(ctx, `SELECT vpn_office_network FROM platform_settings WHERE id = true`).Scan(&out.Body.Network); err != nil {
+		if err := s.DB.QueryRow(ctx, `SELECT vpn_office_network, vpn_office_ports FROM platform_settings WHERE id = true`).Scan(&out.Body.Network, &out.Body.Ports); err != nil {
 			return nil, internalError("load office network", err)
 		}
 		out.Body.Enabled = out.Body.Network != ""
@@ -155,15 +159,19 @@ func registerOfficeNetwork(api huma.API, s *Server) {
 		if _, err := s.requireAuth(ctx, in.SessionToken); err != nil {
 			return nil, err
 		}
-		network := ""
+		network, ports := "", ""
 		if in.Body.Enabled {
+			if _, err := parseOfficePorts(in.Body.Ports); err != nil {
+				return nil, huma.Error400BadRequest(err.Error())
+			}
+			ports = strings.TrimSpace(in.Body.Ports)
 			p, ok := validOfficeNetwork(in.Body.Network)
 			if !ok {
 				return nil, huma.Error400BadRequest("enter a private office network like 192.168.1.0/24")
 			}
 			network = p.String()
 		}
-		if _, err := s.DB.Exec(ctx, `UPDATE platform_settings SET vpn_office_network = $1 WHERE id = true`, network); err != nil {
+		if _, err := s.DB.Exec(ctx, `UPDATE platform_settings SET vpn_office_network = $1, vpn_office_ports = $2 WHERE id = true`, network, ports); err != nil {
 			return nil, internalError("save office network", err)
 		}
 		if err := s.syncGatewayRoutes(ctx); err != nil {
