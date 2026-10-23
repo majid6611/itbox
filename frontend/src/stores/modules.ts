@@ -21,6 +21,7 @@ export const useModulesStore = defineStore('modules', {
     updates: {} as Record<string, ModuleUpdate>,
     loading: false,
     checkingUpdates: false,
+    updateCheckError: '',
   }),
   actions: {
     async fetchAll() {
@@ -71,6 +72,7 @@ export const useModulesStore = defineStore('modules', {
     },
     async checkForUpdates() {
       this.checkingUpdates = true
+      this.updateCheckError = ''
       try {
         const res = await api.post<CheckUpdatesResponse>('/modules/check-updates')
         this.updates = Object.fromEntries(res.updates.map((u) => [u.module_id, u]))
@@ -80,6 +82,8 @@ export const useModulesStore = defineStore('modules', {
         if (res.updates.some((u) => u.new)) {
           await this.fetchAll()
         }
+      } catch {
+        this.updateCheckError = "Couldn't reach GitHub to look for updates. Check this server's internet connection."
       } finally {
         this.checkingUpdates = false
       }

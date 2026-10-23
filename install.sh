@@ -74,8 +74,6 @@ POSTGRES_PASSWORD=${postgres_password}
 BASE_DOMAIN=${base_domain}
 ADMIN_EMAIL=${admin_email}
 ADMIN_PASSWORD=${admin_password}
-MODULE_REGISTRY_URL=
-MODULE_REGISTRY_KEY=
 EOF
   echo
   echo ".env written."

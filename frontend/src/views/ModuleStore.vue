@@ -8,7 +8,11 @@ const openForms = reactive<Record<string, boolean>>({})
 const formValues = reactive<Record<string, Record<string, string>>>({})
 const busy = reactive<Record<string, boolean>>({})
 
-onMounted(() => modules.fetchAll())
+onMounted(async () => {
+  await modules.fetchAll()
+  // Look for updates on every visit; no internet just means no badges.
+  modules.checkForUpdates()
+})
 
 function statusFor(id: string) {
   return modules.statuses[id]?.status ?? 'not_installed'
@@ -124,6 +128,7 @@ async function applyModuleUpdate(id: string) {
         {{ modules.checkingUpdates ? 'Checking…' : 'Check for updates' }}
       </button>
     </div>
+    <p v-if="modules.updateCheckError" class="subtitle">{{ modules.updateCheckError }}</p>
     <div class="grid">
       <div v-for="m in modules.catalog" :key="m.id" class="card">
         <h2>{{ m.name }}</h2>

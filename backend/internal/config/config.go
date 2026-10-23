@@ -22,13 +22,9 @@ type Config struct {
 
 	GatewayContainerName string
 
-	// ModuleRegistryURL/Key point this deployment at registry-server (see
-	// the repo's registry/ directory) — the vendor-run service that
-	// discovers and delivers new/updated modules. Both are optional and
-	// empty by default: a deployment with no key configured just never
-	// sees update/new-module badges, rather than failing to start.
-	ModuleRegistryURL string
-	ModuleRegistryKey string
+	// ModuleUpdateRepo is the GitHub repository ("owner/name") the Module
+	// Store reads new and updated modules from. Empty turns updates off.
+	ModuleUpdateRepo string
 }
 
 func Load() (*Config, error) {
@@ -47,8 +43,7 @@ func Load() (*Config, error) {
 
 		GatewayContainerName: getEnv("GATEWAY_CONTAINER_NAME", "itplatform-internal-gateway"),
 
-		ModuleRegistryURL: getEnv("MODULE_REGISTRY_URL", ""),
-		ModuleRegistryKey: getEnv("MODULE_REGISTRY_KEY", ""),
+		ModuleUpdateRepo: getEnv("MODULE_UPDATE_REPO", "majid6611/itbox"),
 	}
 
 	if cfg.DatabaseURL == "" {

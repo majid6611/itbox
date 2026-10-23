@@ -75,7 +75,7 @@ type Manager struct {
 	// the module permanently unable to authenticate to its own database.
 	inFlight sync.Map // moduleID string -> struct{}{}
 
-	// registryClient talks to registry-server (see backend/internal/
+	// registryClient reads the platform's GitHub repo (see backend/internal/
 	// registryclient) to discover and download new/updated modules. Nil
 	// (Configured() false) is the normal state for a deployment with no
 	// registry set up — CheckForUpdates/ApplyUpdate then just no-op.
