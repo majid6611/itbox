@@ -15,6 +15,22 @@ interface AuditEntry {
 }
 
 const PAGE = 100
+const tab = ref<'activity' | 'system'>('activity')
+
+interface SystemEvent {
+  id: number
+  at: string
+  level: string
+  source: string
+  message: string
+}
+const events = ref<SystemEvent[]>([])
+const sysTotal = ref(0)
+const sysOffset = ref(0)
+const sysSources = ref<string[]>([])
+const sysLoading = ref(false)
+const sysError = ref('')
+const sysFilter = reactive({ level: '', source: '', search: '', from: '', to: '' })
 const entries = ref<AuditEntry[]>([])
 const total = ref(0)
 const offset = ref(0)
@@ -79,12 +95,61 @@ function ok(status: number) {
   return status === 0 || status < 400
 }
 
+function sysQuery(extra: Record<string, string | number> = {}) {
+  const p = new URLSearchParams()
+  for (const [k, v] of Object.entries<string | number>({ ...sysFilter, ...extra })) if (v !== '' && v !== 0) p.set(k, String(v))
+  const q = p.toString()
+  return q ? `?${q}` : ''
+}
+
+async function loadSystem() {
+  sysLoading.value = true
+  sysError.value = ''
+  try {
+    const res = await api.get<{ entries: SystemEvent[]; total: number; sources: string[] }>(
+      `/system-log${sysQuery({ limit: PAGE, offset: sysOffset.value })}`,
+    )
+    events.value = res.entries ?? []
+    sysTotal.value = res.total
+    sysSources.value = res.sources ?? []
+  } catch {
+    sysError.value = "Couldn't load the system log."
+  } finally {
+    sysLoading.value = false
+  }
+}
+
+function searchSystem() {
+  sysOffset.value = 0
+  loadSystem()
+}
+
+function pageSystem(delta: number) {
+  sysOffset.value = Math.max(0, sysOffset.value + delta * PAGE)
+  loadSystem()
+}
+
+function downloadSystem() {
+  window.location.href = `/api/system-log/export${sysQuery()}`
+}
+
+function showSystem() {
+  tab.value = 'system'
+  loadSystem()
+}
+
 onMounted(load)
 </script>
 
 <template>
   <div>
     <h1>Logs</h1>
+    <div class="tabs">
+      <button :class="tab === 'activity' ? 'tab on' : 'tab'" @click="tab = 'activity'">Activity</button>
+      <button :class="tab === 'system' ? 'tab on' : 'tab'" @click="showSystem">System</button>
+    </div>
+
+    <template v-if="tab === 'activity'">
     <p class="subtitle">
       Who did what. Entries can't be edited or deleted, and are kept for one year.
     </p>
@@ -143,6 +208,62 @@ onMounted(load)
       <span class="hint">{{ offset + 1 }}–{{ Math.min(offset + PAGE, total) }} of {{ total }}</span>
       <button class="secondary" :disabled="offset + PAGE >= total" @click="page(1)">Older</button>
     </div>
+    </template>
+
+    <template v-else>
+      <p class="subtitle">
+        What the platform and its modules did — crashes, recoveries, updates, backups. Kept for 90 days.
+      </p>
+      <form class="filters" @submit.prevent="searchSystem">
+        <label>
+          Show
+          <select v-model="sysFilter.level">
+            <option value="">Everything</option>
+            <option value="warn">Warnings and errors</option>
+            <option value="error">Errors only</option>
+          </select>
+        </label>
+        <label>
+          Source
+          <select v-model="sysFilter.source">
+            <option value="">Everywhere</option>
+            <option v-for="src in sysSources" :key="src" :value="src">{{ src }}</option>
+          </select>
+        </label>
+        <label>Contains <input v-model="sysFilter.search" type="text" /></label>
+        <label>From date <input v-model="sysFilter.from" type="date" /></label>
+        <label>To date <input v-model="sysFilter.to" type="date" /></label>
+        <button type="submit">Search</button>
+        <button type="button" class="secondary" @click="downloadSystem">Download CSV</button>
+      </form>
+      <p v-if="sysError" class="result bad">{{ sysError }}</p>
+      <p v-if="!sysLoading && events.length === 0 && !sysError" class="hint">Nothing matches.</p>
+      <table v-else class="logs-table">
+        <thead>
+          <tr>
+            <th>When</th>
+            <th>Level</th>
+            <th>From</th>
+            <th>What happened</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="e in events" :key="e.id">
+            <td class="nowrap">{{ when(e.at) }}</td>
+            <td>
+              <span class="pill" :class="e.level === 'error' ? 'pill-bad' : e.level === 'warn' ? 'pill-warn' : 'pill-neutral'">{{ e.level }}</span>
+            </td>
+            <td>{{ e.source }}</td>
+            <td class="message">{{ e.message }}</td>
+          </tr>
+        </tbody>
+      </table>
+      <div v-if="sysTotal > PAGE" class="pager">
+        <button class="secondary" :disabled="sysOffset === 0" @click="pageSystem(-1)">Newer</button>
+        <span class="hint">{{ sysOffset + 1 }}–{{ Math.min(sysOffset + PAGE, sysTotal) }} of {{ sysTotal }}</span>
+        <button class="secondary" :disabled="sysOffset + PAGE >= sysTotal" @click="pageSystem(1)">Older</button>
+      </div>
+    </template>
   </div>
 </template>
 
@@ -209,6 +330,27 @@ h1 {
 .hint {
   font-size: 0.78rem;
   color: var(--text-faint);
+}
+.tabs {
+  display: flex;
+  gap: 0.25rem;
+  margin: 0.5rem 0 1rem;
+  border-bottom: 1px solid var(--border);
+}
+.tab {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  padding: 0.5rem 1rem;
+  color: var(--text-dim);
+}
+.tab.on {
+  color: var(--text);
+  border-bottom-color: var(--text);
+}
+.message {
+  word-break: break-word;
 }
 .pager {
   display: flex;

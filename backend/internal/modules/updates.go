@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"it-platform/backend/internal/registryclient"
+	"it-platform/backend/internal/syslog"
 )
 
 // UpdateInfo describes one module's available update, as last computed by
@@ -168,9 +169,11 @@ func (m *Manager) ApplyUpdate(ctx context.Context, moduleID string) error {
 		}
 		if err != nil {
 			log.Printf("module update %s: %v", moduleID, err)
+			syslog.Error(moduleID, "Update to version %s failed: %v", entry.LatestVersion, err)
 			m.setUpdateState(moduleID, "failed", err.Error())
 			return
 		}
+		syslog.Info(moduleID, "Updated to version %s", entry.LatestVersion)
 		m.updatesMu.Lock()
 		delete(m.updates, moduleID)
 		m.updatesMu.Unlock()

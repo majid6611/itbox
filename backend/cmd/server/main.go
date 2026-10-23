@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"it-platform/backend/internal/api"
+	"it-platform/backend/internal/audit"
 	"it-platform/backend/internal/auth"
 	"it-platform/backend/internal/config"
 	"it-platform/backend/internal/db"
@@ -13,8 +14,9 @@ import (
 	"it-platform/backend/internal/employee"
 	"it-platform/backend/internal/modules"
 	"it-platform/backend/internal/proxy"
-	"it-platform/backend/internal/audit"
 	"it-platform/backend/internal/registryclient"
+	"it-platform/backend/internal/syslog"
+	"it-platform/backend/internal/version"
 )
 
 func main() {
@@ -55,6 +57,8 @@ func main() {
 	}
 
 	moduleManager.SnapshotDir = cfg.SnapshotDir
+	syslog.Default = syslog.NewService(pool)
+	syslog.Info("platform", "Platform started (version %s)", version.Version)
 	srv := &api.Server{
 		Auth:                 authService,
 		Employee:             employeeService,
@@ -63,6 +67,7 @@ func main() {
 		Registry:             registry,
 		DB:                   pool,
 		Audit:                audit.NewService(pool),
+		SystemLog:            syslog.Default,
 		DatabaseURL:          cfg.DatabaseURL,
 		SnapshotDir:          cfg.SnapshotDir,
 		GatewayContainerName: cfg.GatewayContainerName,

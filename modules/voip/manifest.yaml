@@ -10,7 +10,7 @@ description: >-
   directory in the portal. Needs UDP ports 5060 and 20000-20999 free on
   this server.
 category: collaboration
-version: "1.1.2"
+version: "1.1.3"
 compose_file: docker-compose.yaml
 needs_database: true
 config_schema:

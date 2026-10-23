@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"it-platform/chat/internal/dbx"
 	"log"
 	"net/http"
 
@@ -58,6 +59,7 @@ func NewRouter(s *Server) http.Handler {
 // process for a failure the caller didn't cause.
 func internalError(msg string, err error) huma.StatusError {
 	log.Printf("%s: %v", msg, err)
+	dbx.SystemLog("error", "%s: %v", msg, err)
 	return huma.Error500InternalServerError(msg)
 }
 

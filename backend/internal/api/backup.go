@@ -10,6 +10,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 
 	"it-platform/backend/internal/db"
+	"it-platform/backend/internal/syslog"
 )
 
 // webdavBackupNetwork is the docker network the throwaway rclone
@@ -108,6 +109,11 @@ func (s *Server) startRun(ctx context.Context, kind string) (finish func(status 
 			if len(msg) > 2000 {
 				msg = msg[:2000] // rclone -v output can be long; keep it readable
 			}
+		}
+		if cause != nil {
+			syslog.Error("platform", "%s finished with status %s: %s", kind, status, msg)
+		} else {
+			syslog.Info("platform", "%s finished: %s", kind, status)
 		}
 		if _, err := s.DB.Exec(ctx, `UPDATE backup_runs SET finished_at = now(), status = $2, error_message = $3 WHERE id = $1`, runID, status, msg); err != nil {
 			log.Printf("%s: record run finish: %v", kind, err)

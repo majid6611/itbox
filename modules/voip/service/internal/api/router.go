@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"it-platform/voip/internal/dbx"
 	"log"
 	"net/http"
 	"sync"
@@ -70,6 +71,7 @@ func NewRouter(s *Server) http.Handler {
 // for a failure the caller didn't cause.
 func internalError(msg string, err error) huma.StatusError {
 	log.Printf("%s: %v", msg, err)
+	dbx.SystemLog("error", "%s: %v", msg, err)
 	return huma.Error500InternalServerError(msg)
 }
 
@@ -132,6 +134,7 @@ func (s *Server) Apply(ctx context.Context) error {
 	}
 	if err := s.AMI.Command(ctx, "module reload res_pjsip.so", "dialplan reload", "voicemail reload"); err != nil {
 		log.Printf("reload asterisk (config written, will apply on its next start): %v", err)
+		dbx.SystemLog("warn", "Phone system config saved but Asterisk could not reload it (it will apply on the next restart): %v", err)
 	}
 	return nil
 }

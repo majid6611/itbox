@@ -49,6 +49,8 @@ func main() {
 	if err := dbx.Migrate(ctx, pool); err != nil {
 		log.Fatalf("db migrate: %v", err)
 	}
+	dbx.EnableSystemLog(pool, "voip")
+	dbx.SystemLog("info", "Started")
 
 	s := &api.Server{
 		DB:        pool,
@@ -68,6 +70,7 @@ func main() {
 	// generated files always match what's stored — including after an
 	// update that changes how they're generated.
 	if err := s.Apply(ctx); err != nil {
+		dbx.SystemLog("error", "Couldn't write the phone system's config: %v", err)
 		log.Fatalf("write asterisk config: %v", err)
 	}
 

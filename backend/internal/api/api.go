@@ -17,16 +17,18 @@ import (
 	"it-platform/backend/internal/employee"
 	"it-platform/backend/internal/modules"
 	"it-platform/backend/internal/ratelimit"
+	"it-platform/backend/internal/syslog"
 )
 
 type Server struct {
-	Auth     *auth.Service
-	Employee *employee.Service
-	Docker   *docker.Client
-	Modules  *modules.Manager
-	Registry *modules.Registry
-	DB       *pgxpool.Pool
-	Audit    *audit.Service
+	Auth      *auth.Service
+	Employee  *employee.Service
+	Docker    *docker.Client
+	Modules   *modules.Manager
+	Registry  *modules.Registry
+	DB        *pgxpool.Pool
+	Audit     *audit.Service
+	SystemLog *syslog.Service
 
 	// DatabaseURL is handed to the throwaway containers that dump and
 	// restore the platform database for backups.
@@ -103,8 +105,11 @@ func NewRouter(s *Server) http.Handler {
 	registerCalendarSettings(api, s)
 	registerPortal(api, s)
 	registerAudit(api, s)
+	registerSystemLog(api, s)
 
 	s.Audit.StartPruning(context.Background())
+	s.SystemLog.StartPruning(context.Background())
+	s.startHealthWatch(context.Background())
 	s.startBackupScheduler(context.Background())
 
 	return router
@@ -142,6 +147,7 @@ func rateLimitKey(clientIP string) string {
 // err.Error() directly in the HTTP response body.
 func internalError(msg string, err error) huma.StatusError {
 	log.Printf("%s: %v", msg, err)
+	syslog.Error("platform", "%s: %v", msg, err)
 	return huma.Error500InternalServerError(msg)
 }
 

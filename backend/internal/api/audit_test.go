@@ -14,6 +14,7 @@ import (
 	"it-platform/backend/internal/audit"
 	"it-platform/backend/internal/auth"
 	"it-platform/backend/internal/employee"
+	"it-platform/backend/internal/syslog"
 )
 
 // Real requests through the real router against a real Postgres:
@@ -43,7 +44,9 @@ func TestAuditThroughTheRouter(t *testing.T) {
 	if err := authSvc.EnsureAdmin(ctx, "boss@example.com", "correct-horse"); err != nil {
 		t.Fatal(err)
 	}
-	srv := &Server{Auth: authSvc, Employee: employee.NewService(pool), DB: pool, Audit: audit.NewService(pool)}
+	srv := &Server{Auth: authSvc, Employee: employee.NewService(pool), DB: pool, Audit: audit.NewService(pool), SystemLog: syslog.NewService(pool)}
+	syslog.Default = srv.SystemLog
+	defer func() { syslog.Default = nil }()
 	router := NewRouter(srv)
 
 	do := func(method, path, body, cookie string) *httptest.ResponseRecorder {
@@ -105,6 +108,23 @@ func TestAuditThroughTheRouter(t *testing.T) {
 	// The export itself is recorded.
 	if !strings.Contains(do("GET", "/api/audit?action=export", "", cookie).Body.String(), `"action":"export-audit-log"`) {
 		t.Error("export was not recorded")
+	}
+
+	// System log: a platform event and a module's own insert both show up.
+	syslog.Warn("platform", "disk 85%% used")
+	pool.Exec(ctx, `INSERT INTO system_log (level, source, message) VALUES ('error', 'chat', 'cannot reach storage')`)
+	body = do("GET", "/api/system-log?level=warn", "", cookie).Body.String()
+	for _, want := range []string{"disk 85% used", "cannot reach storage", `"sources":["chat","platform"]`, `"total":2`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("system log is missing %s\n%s", want, body)
+		}
+	}
+	if rec := do("GET", "/api/system-log", "", ""); rec.Code != 401 {
+		t.Errorf("system log without a session: %d", rec.Code)
+	}
+	rec = do("GET", "/api/system-log/export?source=chat", "", cookie)
+	if !strings.Contains(rec.Body.String(), "time,level,source,message") || !strings.Contains(rec.Body.String(), "cannot reach storage") || strings.Contains(rec.Body.String(), "disk 85") {
+		t.Errorf("system log export: %s", rec.Body)
 	}
 	_ = http.StatusOK
 }

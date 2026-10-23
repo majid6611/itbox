@@ -21,6 +21,7 @@ import (
 	"it-platform/backend/internal/docker"
 	"it-platform/backend/internal/proxy"
 	"it-platform/backend/internal/registryclient"
+	"it-platform/backend/internal/syslog"
 )
 
 type Status struct {
@@ -478,7 +479,9 @@ func (m *Manager) Install(ctx context.Context, moduleID string, config map[strin
 		defer cancel()
 		if err := m.doInstall(ctx, moduleID, manifest, config); err != nil {
 			m.markError(moduleID, err)
+			return
 		}
+		syslog.Info(moduleID, "Installed (version %s)", manifest.Version)
 	}()
 
 	return nil
@@ -571,6 +574,7 @@ func (m *Manager) doInstall(ctx context.Context, moduleID string, manifest *Mani
 }
 
 func (m *Manager) markError(moduleID string, cause error) {
+	syslog.Error(moduleID, "Install or start failed: %v", cause)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	_, err := m.db.Exec(ctx, `UPDATE installed_modules SET status = 'error', error_message = $2, updated_at = now() WHERE module_id = $1`,

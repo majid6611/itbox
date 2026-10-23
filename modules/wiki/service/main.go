@@ -31,6 +31,8 @@ func main() {
 	if err := dbx.Migrate(ctx, pool); err != nil {
 		log.Fatalf("db migrate: %v", err)
 	}
+	dbx.EnableSystemLog(pool, "wiki")
+	dbx.SystemLog("info", "Started")
 
 	router := api.NewRouter(&api.Server{DB: pool})
 

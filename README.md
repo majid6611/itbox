@@ -292,6 +292,30 @@ carry passwords and keys.
 
 Tests that need a real Postgres skip unless `TEST_DATABASE_URL` is set.
 
+## System log
+
+The **System** tab under Logs shows what the platform and its modules *did*
+(as opposed to the audit log's who-did-what): a module went down or came back,
+an install or update succeeded, failed or was rolled back, a backup finished or
+failed, disk or backups turned bad, a backend error. Kept 90 days, CSV export.
+
+- **Platform events** are written in-process (`internal/syslog`: `syslog.Info /
+  Warn / Error(source, format, ...)`). A background watcher
+  (`internal/api/watch.go`) re-checks the health list every minute and writes
+  only *changes* — a module that stays down is one entry, not one a minute.
+- **Modules report with a plain `INSERT`** into the shared database — no API
+  to call, so it works while the core backend is down:
+
+  ```sql
+  INSERT INTO system_log (level, source, message) VALUES ('error', '<module id>', '...');
+  ```
+
+  `level` is `info`, `warn` or `error`. The Go modules (wiki, chat, voip) have
+  `internal/dbx/systemlog.go` for this; it throttles identical messages to one
+  a minute so a failure that repeats per request can't flood the table. Modules
+  that are just third-party containers (WebDAV, Jitsi, ...) have no code to
+  report with; the platform writes their install/update/health events itself.
+
 ## Firewall
 
 `install.sh` offers to install a host firewall (`scripts/firewall.nft`,

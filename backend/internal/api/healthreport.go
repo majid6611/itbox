@@ -87,6 +87,36 @@ func (s *Server) backupHealth(ctx context.Context) HealthCheck {
 	return HealthCheck{Name: "Backup", Status: "ok", Detail: "Last backup " + ago}
 }
 
+// healthChecks is the whole "is everything OK?" list: every module that is
+// supposed to be running, then disk space and backup freshness. The page
+// shows it, and the background watcher diffs it to write the system log.
+func (s *Server) healthChecks(ctx context.Context) ([]HealthCheck, error) {
+	var checks []HealthCheck
+	statuses, err := s.Modules.ListStatuses(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, st := range statuses {
+		if st.Status == "not_installed" || st.Status == "stopped" {
+			continue // not expected to be running
+		}
+		name := st.ModuleID
+		if m, ok := s.Registry.Get(st.ModuleID); ok {
+			name = m.Name
+		}
+		if st.Status == "installing" {
+			checks = append(checks, HealthCheck{Name: name, Status: "warn", Detail: "Still installing"})
+			continue
+		}
+		if st.Status == "error" {
+			checks = append(checks, HealthCheck{Name: name, Status: "bad", Detail: "Install or start failed"})
+			continue
+		}
+		checks = append(checks, s.moduleHealth(ctx, st.ModuleID, name))
+	}
+	return append(checks, s.diskHealth(), s.backupHealth(ctx)), nil
+}
+
 func registerHealthReport(api huma.API, s *Server) {
 	huma.Register(api, huma.Operation{
 		OperationID: "health-report",
@@ -97,30 +127,12 @@ func registerHealthReport(api huma.API, s *Server) {
 		if _, err := s.requireAuth(ctx, in.SessionToken); err != nil {
 			return nil, err
 		}
-		out := &HealthReportOutput{}
-		statuses, err := s.Modules.ListStatuses(ctx)
+		checks, err := s.healthChecks(ctx)
 		if err != nil {
 			return nil, internalError("list modules", err)
 		}
-		for _, st := range statuses {
-			if st.Status == "not_installed" || st.Status == "stopped" {
-				continue // not expected to be running
-			}
-			name := st.ModuleID
-			if m, ok := s.Registry.Get(st.ModuleID); ok {
-				name = m.Name
-			}
-			if st.Status == "installing" {
-				out.Body.Checks = append(out.Body.Checks, HealthCheck{Name: name, Status: "warn", Detail: "Still installing"})
-				continue
-			}
-			if st.Status == "error" {
-				out.Body.Checks = append(out.Body.Checks, HealthCheck{Name: name, Status: "bad", Detail: "Install or start failed"})
-				continue
-			}
-			out.Body.Checks = append(out.Body.Checks, s.moduleHealth(ctx, st.ModuleID, name))
-		}
-		out.Body.Checks = append(out.Body.Checks, s.diskHealth(), s.backupHealth(ctx))
+		out := &HealthReportOutput{}
+		out.Body.Checks = checks
 		return out, nil
 	})
 }
