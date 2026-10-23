@@ -232,3 +232,17 @@ textarea::placeholder {
   border-radius: 10px;
   box-shadow: var(--shadow-card);
 }
+
+/* Shared, lightweight refinements for the administration workspace. */
+main.admin { min-width: 0; }
+main.admin h1 { font-size: clamp(1.5rem, 3vw, 2rem); letter-spacing: -.035em; }
+main.admin h2 { letter-spacing: -.02em; }
+main.admin button, main.admin input, main.admin select, main.admin textarea { min-height: 38px; }
+main.admin input[type='checkbox'], main.admin input[type='radio'] { min-height: auto; }
+main.admin .card { border-radius: 12px; }
+main.admin table { font-variant-numeric: tabular-nums; }
+main.admin th { font-weight: 600; }
+main.admin tbody tr:hover { background: var(--surface-hover); }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; animation: none !important; }
+}

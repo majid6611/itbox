@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useAuthStore } from './stores/auth'
 import { usePortalStore } from './stores/portal'
 import { usePortalModulesStore } from './stores/portalModules'
@@ -13,6 +13,10 @@ const portalModules = usePortalModulesStore()
 const chat = useChatStore()
 const route = useRoute()
 const router = useRouter()
+
+const menuOpen = ref(false)
+const pageTitle = computed(() => (({ dashboard: 'Overview', modules: 'Module Store', users: 'Users', logs: 'Activity logs', settings: 'Settings', about: 'About', vpn: 'VPN', backup: 'Backup', voip: 'Phone system', 'compute-mesh': 'Compute Mesh', 'wiki-permissions': 'Wiki permissions', 'calendar-settings': 'Calendar', 'file-share': 'File sharing' } as Record<string, string>)[String(route.name)] || 'Workspace'))
+watch(() => route.path, () => { menuOpen.value = false })
 
 const inPortal = computed(() => route.path.startsWith('/portal'))
 
@@ -54,7 +58,8 @@ async function handlePortalLogout() {
 </script>
 
 <template>
-  <div class="app-shell">
+  <div class="app-shell" :class="{ 'admin-layout': !inPortal && auth.email }">
+    <a class="skip-link" href="#main-content">Skip to content</a>
     <header v-if="inPortal && portal.username" class="topbar">
       <div class="brand">
         <Icon name="mark" :size="20" />
@@ -83,13 +88,16 @@ async function handlePortalLogout() {
         <button class="secondary" @click="handlePortalLogout"><Icon name="logout" :size="15" /> Log out</button>
       </div>
     </header>
-    <header v-else-if="!inPortal && auth.email" class="topbar admin">
+    <header v-else-if="!inPortal && auth.email" class="topbar admin" :class="{ expanded: menuOpen }">
       <div class="brand">
         <Icon name="mark" :size="20" />
-        <span>IT Platform</span>
+        <span>IT Platform<small>ADMIN WORKSPACE</small></span>
       </div>
-      <nav>
+      <button class="menu-toggle secondary" :aria-expanded="menuOpen" aria-controls="admin-navigation" @click="menuOpen = !menuOpen">{{ menuOpen ? 'Close menu' : 'Menu' }}</button>
+      <nav id="admin-navigation" aria-label="Administration">
+        <span class="nav-label">WORKSPACE</span>
         <router-link to="/"><Icon name="dashboard" :size="16" /> Dashboard</router-link>
+        <router-link to="/users"><Icon name="people" :size="16" /> Users</router-link>
         <router-link to="/modules"><Icon name="modules" :size="16" /> Module Store</router-link>
         <router-link to="/logs"><Icon name="logs" :size="16" /> Logs</router-link>
         <router-link to="/settings"><Icon name="settings" :size="16" /> Settings</router-link>
@@ -100,7 +108,8 @@ async function handlePortalLogout() {
         <button class="secondary" @click="handleLogout"><Icon name="logout" :size="15" /> Log out</button>
       </div>
     </header>
-    <main :class="{ admin: !inPortal && auth.email }">
+    <main id="main-content" :class="{ admin: !inPortal && auth.email }">
+      <div v-if="!inPortal && auth.email" class="workspace-bar"><span>Workspace <span class="breadcrumb-divider">/</span> <strong>{{ pageTitle }}</strong></span><span class="workspace-role">Administrator</span></div>
       <router-view />
     </main>
   </div>
@@ -245,5 +254,38 @@ main {
   main {
     padding: 1rem 0.9rem;
   }
+}
+</style>
+
+<style scoped>
+.skip-link { position: fixed; top: -100px; left: 1rem; z-index: 100; padding: .7rem 1rem; background: var(--surface); border: 2px solid var(--accent); border-radius: 8px; }
+.skip-link:focus { top: 1rem; }
+.admin-layout { padding-left: 236px; }
+.topbar.admin { position: fixed; inset: 0 auto 0 0; width: 236px; flex-direction: column; align-items: stretch; padding: 2rem 1rem 1rem; gap: 2.5rem; z-index: 30; border-right: 1px solid var(--admin-nav-border); }
+.topbar.admin .brand { padding: 0 .75rem; gap: .75rem; }
+.brand small { display: block; margin-top: .3rem; font-size: .58rem; letter-spacing: .14em; color: var(--admin-nav-text-dim); font-weight: 500; }
+.topbar.admin nav { flex-direction: column; align-items: stretch; gap: .4rem; }
+.nav-label { font-size: .62rem; letter-spacing: .14em; color: var(--admin-nav-text-dim); padding: 0 .85rem .65rem; }
+.topbar.admin nav a { padding: .75rem .85rem; gap: .75rem; border-radius: 9px; }
+.topbar.admin nav a.router-link-active { box-shadow: inset 3px 0 var(--accent); }
+.topbar.admin .account { border-top: 1px solid var(--admin-nav-border); padding: 1rem .5rem 0; flex-direction: column; align-items: stretch; gap: .8rem; }
+.topbar.admin .account > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .75rem; }
+.topbar.admin .account button { justify-content: center; }
+main.admin { max-width: 1440px; padding: 0 2.5rem 3rem; }
+.workspace-bar { height: 76px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border); margin-bottom: 2rem; font-size: .8rem; color: var(--text-dim); }
+.workspace-bar strong { color: var(--text); font-weight: 600; }
+.breadcrumb-divider { margin: 0 .8rem; color: var(--text-faint); }
+.workspace-role { border: 1px solid var(--border); border-radius: 6px; padding: .25rem .6rem; background: var(--surface); font-size: .72rem; }
+.menu-toggle { display: none; }
+@media (max-width: 1000px) { main.admin { padding: 0 1.5rem 2rem; } .admin-layout { padding-left: 208px; } .topbar.admin { width: 208px; } }
+@media (max-width: 700px) {
+ .admin-layout { padding-left: 0; }
+ .topbar.admin { position: sticky; top: 0; width: 100%; flex-direction: row; align-items: center; padding: .9rem; gap: .7rem; }
+ .topbar.admin .brand { padding: 0; } .brand small { display: none; }
+ .menu-toggle { display: block; margin-left: auto; }
+ .topbar.admin nav, .topbar.admin .account { display: none; }
+ .topbar.admin.expanded nav { display: flex; flex-basis: 100%; white-space: normal; }
+ .topbar.admin.expanded .account { display: flex; flex-basis: 100%; margin: 0; }
+ main.admin { padding: 0 1rem 2rem; } .workspace-bar { height: 58px; margin-bottom: 1.5rem; } .workspace-role { display: none; }
 }
 </style>

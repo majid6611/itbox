@@ -19,7 +19,12 @@ withDefaults(defineProps<{ name: string; size?: number }>(), { size: 18 })
     class="icon"
     aria-hidden="true"
   >
-    <template v-if="name === 'dashboard'">
+    <template v-if="name === 'people'">
+      <circle cx="9" cy="8" r="3" /><path d="M3 21v-2a6 6 0 0112 0v2M16 5a3 3 0 010 6M21 21v-2a6 6 0 00-4-5" />
+    </template>
+    <template v-else-if="name === 'search'"><circle cx="10.5" cy="10.5" r="6.5" /><path d="m16 16 5 5" /></template>
+    <template v-else-if="name === 'arrow'"><path d="M5 12h14m-5-5 5 5-5 5" /></template>
+    <template v-else-if="name === 'dashboard'">
       <rect x="3" y="3" width="7.5" height="7.5" rx="1.8" />
       <rect x="13.5" y="3" width="7.5" height="7.5" rx="1.8" />
       <rect x="3" y="13.5" width="7.5" height="7.5" rx="1.8" />

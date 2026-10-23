@@ -30,9 +30,9 @@ async function handleSubmit() {
 <template>
   <div class="login">
     <form class="card" @submit.prevent="handleSubmit">
-      <div class="mark"><Icon name="mark" :size="22" /></div>
-      <h1>IT Platform</h1>
-      <p class="subtitle">Admin sign-in</p>
+      <div class="login-brand"><div class="mark"><Icon name="mark" :size="22" /></div><strong>IT Platform</strong></div>
+      <h1>Welcome back</h1>
+      <p class="subtitle">Sign in to manage your IT workspace.</p>
       <label>
         Email
         <input v-model="email" type="email" required autocomplete="username" />
@@ -41,7 +41,7 @@ async function handleSubmit() {
         Password
         <input v-model="password" type="password" required autocomplete="current-password" />
       </label>
-      <p v-if="error" class="error">{{ error }}</p>
+      <p v-if="error" class="error" role="alert">{{ error }}</p>
       <button type="submit" :disabled="loading">{{ loading ? 'Logging in…' : 'Log in' }}</button>
       <p class="other-login">Not an administrator? <router-link to="/portal/login">Employee sign-in</router-link></p>
     </form>
@@ -104,4 +104,16 @@ label {
   font-size: 0.85rem;
   margin: 0;
 }
+</style>
+
+<style scoped>
+.login { margin-top: 2.5rem; align-items: center; }
+form { width: min(100%, 400px); padding: 2.5rem; border-radius: 16px; gap: 1.1rem; }
+.login-brand { display: flex; align-items: center; gap: .75rem; margin-bottom: 1rem; font-size: .9rem; }
+.mark { margin: 0; }
+h1 { font-size: 1.7rem; letter-spacing: -.04em; }
+.subtitle { line-height: 1.6; }
+input { min-height: 44px; margin-top: .2rem; }
+button[type='submit'] { min-height: 44px; margin-top: .25rem; }
+@media (max-width: 480px) { form { padding: 1.75rem 1.25rem; } .login { margin-top: 1rem; } }
 </style>

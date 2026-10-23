@@ -1,26 +1,26 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { usePortalStore } from '../stores/portal'
-import Login from '../views/Login.vue'
-import Dashboard from '../views/Dashboard.vue'
-import ModuleStore from '../views/ModuleStore.vue'
-import Users from '../views/Users.vue'
-import Logs from '../views/Logs.vue'
-import Vpn from '../views/Vpn.vue'
-import Settings from '../views/Settings.vue'
-import About from '../views/About.vue'
-import Backup from '../views/Backup.vue'
-import WikiPermissions from '../views/WikiPermissions.vue'
-import ComputeMesh from '../views/ComputeMesh.vue'
-import CalendarSettings from '../views/CalendarSettings.vue'
-import Voip from '../views/Voip.vue'
-import PortalLogin from '../views/portal/PortalLogin.vue'
-import Wiki from '../views/portal/Wiki.vue'
-import Chat from '../views/portal/Chat.vue'
-import Calendar from '../views/portal/Calendar.vue'
-import Phone from '../views/portal/Phone.vue'
-import Files from '../views/portal/Files.vue'
-import FileShare from '../views/FileShare.vue'
+const Login = () => import('../views/Login.vue')
+const Dashboard = () => import('../views/Dashboard.vue')
+const ModuleStore = () => import('../views/ModuleStore.vue')
+const Users = () => import('../views/Users.vue')
+const Logs = () => import('../views/Logs.vue')
+const Vpn = () => import('../views/Vpn.vue')
+const Settings = () => import('../views/Settings.vue')
+const About = () => import('../views/About.vue')
+const Backup = () => import('../views/Backup.vue')
+const WikiPermissions = () => import('../views/WikiPermissions.vue')
+const ComputeMesh = () => import('../views/ComputeMesh.vue')
+const CalendarSettings = () => import('../views/CalendarSettings.vue')
+const Voip = () => import('../views/Voip.vue')
+const PortalLogin = () => import('../views/portal/PortalLogin.vue')
+const Wiki = () => import('../views/portal/Wiki.vue')
+const Chat = () => import('../views/portal/Chat.vue')
+const Calendar = () => import('../views/portal/Calendar.vue')
+const Phone = () => import('../views/portal/Phone.vue')
+const Files = () => import('../views/portal/Files.vue')
+const FileShare = () => import('../views/FileShare.vue')
 
 const router = createRouter({
   history: createWebHistory(),

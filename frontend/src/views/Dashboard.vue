@@ -25,15 +25,30 @@ interface HealthCheck {
 const checks = ref<HealthCheck[] | null>(null)
 const problems = computed(() => (checks.value ?? []).filter((c) => c.status !== 'ok'))
 
-onMounted(async () => {
-  modules.fetchAll()
-  users.fetchAll()
-  try {
-    checks.value = (await api.get<{ checks: HealthCheck[] }>('/health/report')).checks ?? []
-  } catch {
-    checks.value = null
-  }
-})
+const query = ref('')
+const moduleFilter = ref('all')
+const loadError = ref('')
+const refreshing = ref(false)
+const healthUnavailable = ref(false)
+const visibleModules = computed(() => modules.catalog.filter(m =>
+  (moduleFilter.value === 'all' || (moduleFilter.value === 'installed' ? statusFor(m.id) !== 'not_installed' : ['stopped', 'error'].includes(statusFor(m.id)))) &&
+  `${m.name} ${m.description}`.toLowerCase().includes(query.value.toLowerCase().trim()),
+))
+async function refresh() {
+  refreshing.value = true
+  loadError.value = ''
+  const results = await Promise.allSettled([
+    modules.fetchAll(), users.fetchAll(),
+    api.get<{ checks: HealthCheck[] }>('/health/report'),
+  ])
+  if (results[0].status === 'rejected') loadError.value = 'Could not load services. Try refreshing.'
+  if (results[1].status === 'rejected') loadError.value += ' People data is currently unavailable.'
+  const health = results[2]
+  checks.value = health.status === 'fulfilled' ? health.value.checks ?? [] : null
+  healthUnavailable.value = health.status === 'rejected'
+  refreshing.value = false
+}
+onMounted(refresh)
 
 function statusFor(id: string) {
   return modules.statuses[id]?.status ?? 'not_installed'
@@ -56,11 +71,17 @@ const attentionCount = computed(() => installed.value.filter((m) => ['stopped', 
 
 <template>
   <div>
-    <h1>Dashboard</h1>
-    <p class="subtitle">What's running on this deployment right now.</p>
+    <div class="page-heading">
+      <div><span class="eyebrow">YOUR WORKSPACE AT A GLANCE</span><h1>Overview</h1>
+      <p class="subtitle">Your services, your people. Everything in one place.</p></div>
+      <button class="secondary refresh" :disabled="refreshing" @click="refresh">{{ refreshing ? 'Refreshing…' : 'Refresh overview' }}</button>
+    </div>
+    <p v-if="loadError" class="notice" role="alert">{{ loadError }}</p>
+    <p v-if="healthUnavailable" class="hint" role="status">Health report is currently unavailable.</p>
 
     <div v-if="checks" class="card health" :class="{ 'health-bad': problems.some((p) => p.status === 'bad') }">
-      <p v-if="problems.length === 0" class="health-ok"><span class="pill pill-good">Everything is OK</span></p>
+      <p v-if="checks.length > 0 && problems.length === 0" class="health-ok"><span class="pill pill-good">Healthy</span><strong>All health checks passed</strong><span class="hint">No issues reported by your deployment.</span></p>
+      <p v-else-if="checks.length === 0" class="hint">No health checks reported yet.</p>
       <template v-else>
         <p class="health-title">Needs attention</p>
         <p v-for="p in problems" :key="p.name" class="health-row">
@@ -75,7 +96,7 @@ const attentionCount = computed(() => installed.value.filter((m) => ['stopped', 
       <div class="stats">
         <div class="stat card">
           <span class="stat-number">{{ installed.length }}</span>
-          <span class="stat-label">Installed</span>
+          <span class="stat-label">Installed services</span>
         </div>
         <div class="stat card">
           <span class="stat-number good">{{ runningCount }}</span>
@@ -87,18 +108,25 @@ const attentionCount = computed(() => installed.value.filter((m) => ['stopped', 
         </div>
       </div>
 
-      <div class="card list">
+      <section class="services-section">
+      <div class="section-heading"><div><h2>Services</h2><p class="hint">Find and manage the tools your team relies on.</p></div><router-link to="/modules" class="section-link">Module Store <Icon name="arrow" :size="15" /></router-link></div>
+      <div class="service-toolbar">
+        <div class="filter-tabs" role="group" aria-label="Filter services"><button v-for="filter in [{ id: 'all', label: 'All services' }, { id: 'installed', label: 'Installed' }, { id: 'attention', label: 'Needs attention' }]" :key="filter.id" :aria-pressed="moduleFilter === filter.id" @click="moduleFilter = filter.id">{{ filter.label }}</button></div>
+        <label class="service-search"><Icon name="search" :size="16" /><input v-model="query" type="search" aria-label="Search services" placeholder="Search services…" /></label>
+      </div>
+      <div class="card list" :aria-busy="refreshing">
         <router-link
-          v-for="m in modules.catalog"
+          v-for="m in visibleModules"
           :key="m.id"
           :to="statusFor(m.id) === 'running' && m.internal_panel ? m.internal_panel : '/modules'"
           class="row"
         >
-          <span class="row-name">{{ m.name }}</span>
-          <span class="pill" :class="pillClass(statusFor(m.id))">{{ statusFor(m.id).replace('_', ' ') }}</span>
+          <span class="service-icon"><Icon name="modules" :size="20" /></span><span class="service-copy"><span class="row-name">{{ m.name }}</span><span class="service-description">{{ m.description }}</span></span>
+          <span class="pill" :class="pillClass(statusFor(m.id))">{{ statusFor(m.id).replaceAll('_', ' ') }}</span>
         </router-link>
       </div>
-      <p v-if="modules.catalog.length === 0" class="hint">No modules in the catalog yet.</p>
+      <p v-if="!visibleModules.length" class="empty-state">{{ query || moduleFilter !== 'all' ? 'No services match your filters.' : 'Your workspace is ready for its first service.' }} <router-link v-if="!modules.catalog.length" to="/modules">Browse modules</router-link></p>
+      </section>
       <div v-if="users.available && people.length" class="card people">
         <div class="people-head">
           <h2>People</h2>
@@ -263,4 +291,42 @@ h1 {
   font-size: 0.88rem;
   font-weight: 600;
 }
+</style>
+
+<style scoped>
+.eyebrow { font-size: .65rem; font-weight: 700; letter-spacing: .14em; color: var(--accent); }
+.page-heading { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 1.8rem; }
+h1 { font-size: 2rem; letter-spacing: -.045em; margin-top: .35rem; }
+.page-heading .subtitle { margin: .4rem 0 0; }
+.refresh { white-space: nowrap; }
+.notice { background: var(--danger-bg); color: var(--danger-text); padding: 1rem; border-radius: 10px; }
+.health { background: var(--surface); padding: 1rem 1.25rem; }
+.health-ok { display: flex; align-items: center; gap: .9rem; font-size: .85rem; flex-wrap: wrap; }
+.health-ok .hint { margin-left: auto; font-size: .8rem; }
+.stats { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; margin: 1.5rem 0 2.25rem; }
+.stat { flex-direction: column-reverse; padding: 1.4rem 1.5rem; gap: .7rem; }
+.stat-number { font-size: 2.2rem; letter-spacing: -.04em; }
+.stat-label { font-size: .8rem; }
+.section-heading { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 1.25rem; }
+.section-heading h2 { font-size: 1.1rem; margin: 0; }
+.section-heading .hint { margin: .25rem 0 0; font-size: .8rem; }
+.section-link { display: inline-flex; gap: .5rem; align-items: center; font-size: .8rem; font-weight: 600; white-space: nowrap; }
+.service-toolbar { display: flex; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; flex-wrap: wrap; }
+.filter-tabs { display: flex; background: var(--surface-hover); padding: .25rem; border-radius: 9px; gap: .15rem; }
+.filter-tabs button { background: transparent; color: var(--text-dim); font-size: .75rem; padding: .45rem .75rem; }
+.filter-tabs button[aria-pressed='true'] { background: var(--surface); color: var(--text); box-shadow: var(--shadow-card); }
+.service-search { display: flex; align-items: center; gap: .5rem; background: var(--surface); border: 1px solid var(--border-strong); border-radius: 8px; padding: 0 .75rem; color: var(--text-dim); }
+.service-search input { border: 0; background: transparent; width: 190px; font-size: .8rem; }
+.list { max-width: none; padding: .35rem 1rem; }
+.row { padding: 1rem .25rem; border-radius: 0; gap: .9rem; }
+.row + .row { border-top: 1px solid var(--border); }
+.service-icon { display: flex; padding: .7rem; border-radius: 10px; color: var(--accent); background: var(--accent-soft); }
+.service-copy { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: .2rem; }
+.row-name { font-weight: 650; }
+.service-description { font-size: .78rem; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.empty-state { text-align: center; color: var(--text-dim); padding: 2rem; font-size: .9rem; }
+.people { max-width: none; margin-top: 2rem; overflow-x: auto; padding: 1.25rem; }
+.people-head { margin-bottom: .75rem; }
+.people-table td { padding: .85rem .5rem .85rem 0; }
+@media (max-width: 700px) { .page-heading { align-items: flex-start; flex-direction: column; } .stats { gap: .5rem; } .stat { padding: 1rem .75rem; } .stat-number { font-size: 1.8rem; } .stat-label { font-size: .7rem; } .health-ok .hint { margin-left: 0; } .section-heading { align-items: flex-start; } .section-heading .hint { max-width: 200px; } .service-search { width: 100%; } .service-search input { width: 100%; } .filter-tabs { width: 100%; } .filter-tabs button { flex: 1; padding: .45rem; } .people-head { flex-wrap: wrap; } }
 </style>
