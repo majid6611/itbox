@@ -111,6 +111,7 @@ func NewRouter(s *Server) http.Handler {
 	s.Audit.StartPruning(context.Background())
 	s.SystemLog.StartPruning(context.Background())
 	s.startHealthWatch(context.Background())
+	s.startVpnWatch(context.Background())
 	s.startBackupScheduler(context.Background())
 
 	return router

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"strings"
 	"time"
 
 	"it-platform/backend/internal/netbird"
@@ -43,7 +42,13 @@ func (s *Server) bootstrapInternalGateway(ctx context.Context) {
 		return
 	}
 
-	key, err := client.CreateSetupKey(ctx, "internal-gateway", nil)
+	approvedID, err := s.ensureAccessPolicy(ctx, client)
+	if err != nil {
+		log.Printf("internal gateway bootstrap: access policy: %v", err)
+		return
+	}
+	// The gateway is ours: it joins the approved group straight away.
+	key, err := client.CreateReusableSetupKey(ctx, "internal-gateway", []string{approvedID})
 	if err != nil {
 		log.Printf("internal gateway bootstrap: create setup key: %v", err)
 		return
@@ -116,7 +121,17 @@ func (s *Server) syncGatewayRoutes(ctx context.Context) error {
 		want[officeNetworkRouteID] = officeNetwork
 	}
 
-	peerID, groupID, err := s.gatewayPeerAndGroup(ctx, client)
+	groupID, err := s.ensureAccessPolicy(ctx, client)
+	if err != nil {
+		return err
+	}
+	// A reinstalled VPN module starts with a fresh account, so the 2FA
+	// setting is re-applied here as well. Not worth failing the route
+	// repair over.
+	if err := client.SetLocalMFA(ctx, s.vpnMFAWanted(ctx)); err != nil {
+		log.Printf("gateway routes: apply 2fa setting: %v", err)
+	}
+	peerID, err := s.gatewayPeer(ctx, client)
 	if err != nil {
 		return err
 	}
@@ -130,7 +145,7 @@ func (s *Server) syncGatewayRoutes(ctx context.Context) error {
 		if r.NetworkID != internalServicesRouteID && r.NetworkID != officeNetworkRouteID {
 			continue // not ours
 		}
-		if want[r.NetworkID] == r.Network && r.Peer == peerID && !have[r.NetworkID] {
+		if want[r.NetworkID] == r.Network && r.Peer == peerID && len(r.Groups) == 1 && r.Groups[0] == groupID && !have[r.NetworkID] {
 			have[r.NetworkID] = true
 			continue
 		}
@@ -155,33 +170,18 @@ func (s *Server) syncGatewayRoutes(ctx context.Context) error {
 	return nil
 }
 
-// gatewayPeerAndGroup finds the internal gateway's own NetBird peer and
-// the "All" group NetBird creates automatically — a route's distribution
-// group (which peers get told about it).
-func (s *Server) gatewayPeerAndGroup(ctx context.Context, client *netbird.Client) (peerID, groupID string, err error) {
+// gatewayPeer finds the internal gateway's own NetBird peer.
+func (s *Server) gatewayPeer(ctx context.Context, client *netbird.Client) (string, error) {
 	peers, err := client.ListPeers(ctx)
 	if err != nil {
-		return "", "", err
+		return "", err
 	}
 	for _, p := range peers {
 		if p.Hostname == s.GatewayContainerName {
-			peerID = p.ID
-			break
+			return p.ID, nil
 		}
 	}
-	if peerID == "" {
-		return "", "", fmt.Errorf("gateway peer not found among %d peers (looked for hostname %q)", len(peers), s.GatewayContainerName)
-	}
-	groups, err := client.ListGroups(ctx)
-	if err != nil {
-		return "", "", err
-	}
-	for _, g := range groups {
-		if strings.EqualFold(g.Name, "All") {
-			return peerID, g.ID, nil
-		}
-	}
-	return "", "", fmt.Errorf("no \"All\" group found")
+	return "", fmt.Errorf("gateway peer not found among %d peers (looked for hostname %q)", len(peers), s.GatewayContainerName)
 }
 
 // internalServicesCIDR is nginx's fixed edge-network address (see

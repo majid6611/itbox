@@ -11,6 +11,7 @@ export const useVpnStore = defineStore('vpn', {
     loading: false,
     // Office LAN access through the VPN — see GET /api/vpn/office-network.
     office: { available: false, enabled: false, network: '', detected: '' },
+    twoFactor: false,
   }),
   actions: {
     async fetchAll() {
@@ -25,11 +26,18 @@ export const useVpnStore = defineStore('vpn', {
         this.loading = false
       }
     },
-    // Returns the setup key, so the UI can show it once alongside the download link.
+    // Returns what to show once alongside the download link: a setup key,
+    // or (with 2FA on) the person's login email and password.
     async enable(username: string) {
       const res = await api.post<EnableVpnResponse>(`/vpn/users/${username}/enable`)
       await this.fetchAll()
-      return res.setup_key
+      return res
+    },
+    async fetchTwoFactor() {
+      this.twoFactor = (await api.get<{ enabled: boolean }>('/vpn/two-factor')).enabled
+    },
+    async saveTwoFactor(enabled: boolean) {
+      this.twoFactor = (await api.put<{ enabled: boolean }>('/vpn/two-factor', { enabled })).enabled
     },
     async fetchOfficeNetwork() {
       this.office = await api.get<{ available: boolean; enabled: boolean; network: string; detected: string }>(
@@ -39,6 +47,14 @@ export const useVpnStore = defineStore('vpn', {
     async saveOfficeNetwork(enabled: boolean, network: string) {
       await api.put('/vpn/office-network', { enabled, network })
       await this.fetchOfficeNetwork()
+    },
+    async approveDevice(id: string) {
+      await api.post(`/vpn/devices/${id}/approve`)
+      await this.fetchAll()
+    },
+    async removeDevice(id: string) {
+      await api.delete(`/vpn/devices/${id}`)
+      await this.fetchAll()
     },
     async disable(username: string) {
       await api.post(`/vpn/users/${username}/disable`)

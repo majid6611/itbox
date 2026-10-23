@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 )
 
 type Client struct {
@@ -89,20 +90,36 @@ type SetupKey struct {
 	Key string `json:"key"`
 }
 
-// CreateSetupKey issues a reusable enrollment token — pasted into the
-// NetBird client app once, no browser login needed. name is just a label
+// SetupKeyLifetime is how long an enrollment key works. It enrolls exactly
+// one device, so a key that leaks or sits unused in someone's inbox is
+// worthless after a day.
+const SetupKeyLifetime = 24 * time.Hour
+
+// CreateSetupKey issues a one-device, one-day enrollment token — pasted into
+// the NetBird client app once, no browser login needed. name is just a label
 // (we use the LDAP username) shown in NetBird's own records.
 //
 // groupIDs are the groups every device enrolled with this key joins, which
 // is the only way to tell afterwards whose device is whose (see Peer).
 func (c *Client) CreateSetupKey(ctx context.Context, name string, groupIDs []string) (*SetupKey, error) {
+	return c.createSetupKey(ctx, name, groupIDs, "one-off", SetupKeyLifetime, 1)
+}
+
+// CreateReusableSetupKey is for the platform's own gateway, whose start-up
+// retries `netbird up` with the same key until it works — a one-device key
+// would be used up by an attempt that registered but then timed out.
+func (c *Client) CreateReusableSetupKey(ctx context.Context, name string, groupIDs []string) (*SetupKey, error) {
+	return c.createSetupKey(ctx, name, groupIDs, "reusable", 30*24*time.Hour, 0)
+}
+
+func (c *Client) createSetupKey(ctx context.Context, name string, groupIDs []string, kind string, ttl time.Duration, usageLimit int) (*SetupKey, error) {
 	var out SetupKey
 	err := c.do(ctx, http.MethodPost, "/api/setup-keys", map[string]any{
 		"name":        name,
-		"type":        "reusable",
-		"expires_in":  2592000, // 30 days; re-enabling issues a fresh one
+		"type":        kind,
+		"expires_in":  int(ttl.Seconds()),
 		"auto_groups": groupIDs,
-		"usage_limit": 0,
+		"usage_limit": usageLimit,
 	}, &out)
 	if err != nil {
 		return nil, fmt.Errorf("create setup key: %w", err)
@@ -152,11 +169,8 @@ func (c *Client) DeleteGroup(ctx context.Context, id string) error {
 	return nil
 }
 
-// ListPeers returns every device currently enrolled — NOT attributable to
-// a specific company user: setup keys are reusable (one person's key can
-// enroll several devices) and NetBird's peer objects don't reference which
-// key created them, so this is deliberately a flat device list, not a
-// per-user one.
+// ListPeers returns every device currently enrolled. Which user a device
+// belongs to is its "user-<name>" group (see Peer.Groups).
 func (c *Client) ListPeers(ctx context.Context) ([]Peer, error) {
 	var out []Peer
 	if err := c.do(ctx, http.MethodGet, "/api/peers", nil, &out); err != nil {
@@ -168,6 +182,91 @@ func (c *Client) ListPeers(ctx context.Context) ([]Peer, error) {
 type Group struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
+	// Peers is only filled in by GetGroup.
+	Peers []struct {
+		ID string `json:"id"`
+	} `json:"peers"`
+}
+
+// AddPeerToGroup puts a peer in a group (a no-op if it's already there).
+// NetBird only offers "replace the whole member list," so this reads the
+// current one first.
+func (c *Client) AddPeerToGroup(ctx context.Context, groupID, peerID string) error {
+	var g Group
+	if err := c.do(ctx, http.MethodGet, "/api/groups/"+groupID, nil, &g); err != nil {
+		return fmt.Errorf("get group: %w", err)
+	}
+	ids := []string{}
+	for _, p := range g.Peers {
+		if p.ID == peerID {
+			return nil
+		}
+		ids = append(ids, p.ID)
+	}
+	return c.setGroupPeers(ctx, g, append(ids, peerID))
+}
+
+func (c *Client) setGroupPeers(ctx context.Context, g Group, peerIDs []string) error {
+	err := c.do(ctx, http.MethodPut, "/api/groups/"+g.ID, map[string]any{"name": g.Name, "peers": peerIDs}, nil)
+	if err != nil {
+		return fmt.Errorf("update group: %w", err)
+	}
+	return nil
+}
+
+// AddAllPeersToGroup puts every currently enrolled peer in the group.
+func (c *Client) AddAllPeersToGroup(ctx context.Context, g Group) error {
+	peers, err := c.ListPeers(ctx)
+	if err != nil {
+		return err
+	}
+	ids := []string{}
+	for _, p := range peers {
+		ids = append(ids, p.ID)
+	}
+	return c.setGroupPeers(ctx, g, ids)
+}
+
+type Policy struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+func (c *Client) ListPolicies(ctx context.Context) ([]Policy, error) {
+	var out []Policy
+	if err := c.do(ctx, http.MethodGet, "/api/policies", nil, &out); err != nil {
+		return nil, fmt.Errorf("list policies: %w", err)
+	}
+	return out, nil
+}
+
+func (c *Client) DeletePolicy(ctx context.Context, id string) error {
+	if err := c.do(ctx, http.MethodDelete, "/api/policies/"+id, nil, nil); err != nil {
+		return fmt.Errorf("delete policy: %w", err)
+	}
+	return nil
+}
+
+// CreateAllowPolicy lets every device in the group reach every other device
+// in it, on any port. Devices outside the group are reachable by nobody.
+func (c *Client) CreateAllowPolicy(ctx context.Context, name, groupID string) error {
+	err := c.do(ctx, http.MethodPost, "/api/policies", map[string]any{
+		"name":    name,
+		"enabled": true,
+		"rules": []map[string]any{{
+			"name":          name,
+			"enabled":       true,
+			"action":        "accept",
+			"bidirectional": true,
+			"protocol":      "all",
+			"sources":       []string{groupID},
+			"destinations":  []string{groupID},
+		}},
+	}, nil)
+	if err != nil {
+		return fmt.Errorf("create policy: %w", err)
+	}
+	return nil
 }
 
 // ListGroups returns every peer group — used to find the ID of the "All"
@@ -186,6 +285,8 @@ type Route struct {
 	NetworkID string `json:"network_id"`
 	Network   string `json:"network"`
 	Peer      string `json:"peer"`
+	// Groups are the peers told about this route.
+	Groups []string `json:"groups"`
 }
 
 func (c *Client) ListRoutes(ctx context.Context) ([]Route, error) {
@@ -220,4 +321,59 @@ func (c *Client) CreateRoute(ctx context.Context, networkID, network, descriptio
 		"metric":      100, // required, 1-9999 — no default, NetBird 422s without it
 		"groups":      []string{groupID},
 	}, nil)
+}
+
+// SetLocalMFA turns the authenticator-app step on or off for every person
+// who logs in with a NetBird login. NetBird replaces all account settings
+// in one PUT, so the current ones are read first and sent back unchanged.
+func (c *Client) SetLocalMFA(ctx context.Context, enabled bool) error {
+	var accounts []struct {
+		ID       string         `json:"id"`
+		Settings map[string]any `json:"settings"`
+	}
+	if err := c.do(ctx, http.MethodGet, "/api/accounts", nil, &accounts); err != nil {
+		return fmt.Errorf("get account: %w", err)
+	}
+	if len(accounts) == 0 {
+		return fmt.Errorf("get account: none found")
+	}
+	a := accounts[0]
+	if on, _ := a.Settings["local_mfa_enabled"].(bool); on == enabled {
+		return nil
+	}
+	a.Settings["local_mfa_enabled"] = enabled
+	if err := c.do(ctx, http.MethodPut, "/api/accounts/"+a.ID, map[string]any{"settings": a.Settings}, nil); err != nil {
+		return fmt.Errorf("update account: %w", err)
+	}
+	return nil
+}
+
+type User struct {
+	ID       string `json:"id"`
+	Password string `json:"password"`
+}
+
+// CreateLocalUser makes a person who can log in to the VPN app with an email
+// and a generated password (returned only now). Every device they log in
+// with joins autoGroups.
+func (c *Client) CreateLocalUser(ctx context.Context, email, name string, autoGroups []string) (*User, error) {
+	var out User
+	err := c.do(ctx, http.MethodPost, "/api/users", map[string]any{
+		"email":           email,
+		"name":            name,
+		"role":            "user",
+		"auto_groups":     autoGroups,
+		"is_service_user": false,
+	}, &out)
+	if err != nil {
+		return nil, fmt.Errorf("create user: %w", err)
+	}
+	return &out, nil
+}
+
+func (c *Client) DeleteUser(ctx context.Context, id string) error {
+	if err := c.do(ctx, http.MethodDelete, "/api/users/"+id, nil, nil); err != nil {
+		return fmt.Errorf("delete user: %w", err)
+	}
+	return nil
 }

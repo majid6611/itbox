@@ -115,9 +115,13 @@ export interface VpnUser {
   username: string
   name: string
   has_access: boolean
+  key_expires_at: string
+  login: boolean
 }
 
 export interface VpnDevice {
+  id: string
+  groups: { id: string; name: string }[]
   name: string
   ip: string
   connected: boolean
@@ -135,6 +139,8 @@ export interface VpnUsersResponse {
 export interface EnableVpnResponse {
   success: boolean
   setup_key: string
+  login_email: string
+  login_password: string
 }
 
 export type ThemeName = 'slate' | 'stone'

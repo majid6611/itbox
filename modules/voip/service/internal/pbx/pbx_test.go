@@ -98,3 +98,15 @@ func TestRecordCodeOnlyForTheChosenExtension(t *testing.T) {
 		t.Fatalf("recording should go to the greeting file:\n%s", d)
 	}
 }
+
+func TestPhonesAreHeldToTheLanACLButTheOutsideLineIsNot(t *testing.T) {
+	exts := []Extension{{Number: "101", Name: "A", Password: "pw"}}
+	st := Settings{TrunkEnabled: true, TrunkHost: "sip.example.com", TrunkUsername: "u", TrunkPassword: "p"}
+	out := renderPJSIP(exts, st, true)
+	if n := strings.Count(out, "acl = itp-lan"); n != 1 {
+		t.Fatalf("want the source ACL on the one extension and nowhere else, got %d:\n%s", n, out)
+	}
+	if i := strings.Index(out, "[trunk]"); i < 0 || strings.Contains(out[i:], "acl = itp-lan") {
+		t.Fatalf("the outside line calls in from a public address and must not get the LAN ACL:\n%s", out)
+	}
+}
