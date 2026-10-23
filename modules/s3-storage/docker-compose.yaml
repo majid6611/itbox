@@ -1,3 +1,11 @@
+# Cap each container's log (Docker keeps them forever otherwise, and a chatty
+# container can fill a small disk): 3 files of 10 MB per container.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 networks:
   default: {}
   edge:
@@ -9,6 +17,7 @@ services:
   # writes garage.toml into a shared named volume before the real
   # container starts, instead of trying to generate it in-place.
   garage-config:
+    logging: *logging
     image: busybox:latest
     restart: "no"
     entrypoint: ["/bin/sh", "-c"]
@@ -44,6 +53,7 @@ services:
   # generate at install time (config_schema secrets) are already the
   # real, live credentials.
   garage:
+    logging: *logging
     image: dxflrs/garage:v2.3.0
     restart: unless-stopped
     command: ["/garage", "server", "--single-node", "--default-bucket"]

@@ -5,7 +5,7 @@ description: >-
   macOS Finder, or Linux file managers. Runs over plain HTTP(S) so it works
   the same on the LAN or remotely, unlike SMB.
 category: storage
-version: "1.0.3"
+version: "1.0.4"
 compose_file: docker-compose.yaml
 config_schema:
   - key: admin_username

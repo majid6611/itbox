@@ -316,6 +316,18 @@ failed, disk or backups turned bad, a backend error. Kept 90 days, CSV export.
   that are just third-party containers (WebDAV, Jitsi, ...) have no code to
   report with; the platform writes their install/update/health events itself.
 
+**Module output** (third tab) shows the last lines a module's containers wrote
+(`docker logs`, stdout and stderr merged by timestamp), with a download button.
+Values that look like passwords, tokens or keys are masked
+(`internal/api/modulelogs.go`) — a best-effort pattern match, so the page tells
+people to look before sending. Reading it is recorded in the audit log.
+
+**Log size.** Every service in `docker-compose.yaml` and each module's compose
+file sets `logging: *logging` — 3 files of 10 MB per container — so a chatty
+container can't fill the disk. New module compose files should do the same
+(copy the `x-logging` block). An already-running container keeps its old limit
+until it is recreated (a module update does that).
+
 ## Firewall
 
 `install.sh` offers to install a host firewall (`scripts/firewall.nft`,

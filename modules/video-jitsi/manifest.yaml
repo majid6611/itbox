@@ -7,7 +7,7 @@ description: >-
   straight into the conversation, the same way sharing any other link
   already works there.
 category: collaboration
-version: "1.0.4"
+version: "1.0.5"
 compose_file: docker-compose.yaml
 # Jitsi's web frontend hardcodes wss:// for call signaling with no plain
 # HTTP fallback — confirmed by reading its own config template — so this

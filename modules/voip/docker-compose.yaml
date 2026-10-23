@@ -1,3 +1,11 @@
+# Cap each container's log (Docker keeps them forever otherwise, and a chatty
+# container can fill a small disk): 3 files of 10 MB per container.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 # Two containers: Asterisk itself (the engine, never seen by anyone) and
 # our own voip service, which owns the extensions/settings in the
 # platform's Postgres, writes Asterisk's config into a shared volume from
@@ -17,6 +25,7 @@ volumes:
 
 services:
   voip:
+    logging: *logging
     # Built from the source shipped with the module (MODULE_DIR/MODULE_VERSION
     # are filled in by the platform). The version in the tag is what keeps the
     # previous version's image around for a rollback — so bump the module's
@@ -35,6 +44,7 @@ services:
       - edge
 
   asterisk:
+    logging: *logging
     build: ${MODULE_DIR}/asterisk
     image: it-asterisk:${MODULE_VERSION}
     restart: unless-stopped

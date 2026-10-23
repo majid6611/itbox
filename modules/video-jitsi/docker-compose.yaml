@@ -1,3 +1,11 @@
+# Cap each container's log (Docker keeps them forever otherwise, and a chatty
+# container can fill a small disk): 3 files of 10 MB per container.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 # Four upstream Jitsi Meet components (web/prosody/jicofo/jvb), pinned to
 # the same stable release tag so they're guaranteed compatible with each
 # other. Deliberately not setting any of the XMPP_*_DOMAIN variables the
@@ -16,6 +24,7 @@ networks:
 
 services:
   web:
+    logging: *logging
     image: jitsi/web:stable-11031
     restart: unless-stopped
     environment:
@@ -51,6 +60,7 @@ services:
       - edge
 
   prosody:
+    logging: *logging
     image: jitsi/prosody:stable-11031
     restart: unless-stopped
     environment:
@@ -70,6 +80,7 @@ services:
           - xmpp.meet.jitsi
 
   jicofo:
+    logging: *logging
     image: jitsi/jicofo:stable-11031
     restart: unless-stopped
     environment:
@@ -81,6 +92,7 @@ services:
       - meet
 
   jvb:
+    logging: *logging
     image: jitsi/jvb:stable-11031
     restart: unless-stopped
     environment:

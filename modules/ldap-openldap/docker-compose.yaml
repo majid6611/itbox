@@ -1,3 +1,11 @@
+# Cap each container's log (Docker keeps them forever otherwise, and a chatty
+# container can fill a small disk): 3 files of 10 MB per container.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 networks:
   default: {}
   edge:
@@ -6,6 +14,7 @@ networks:
 
 services:
   openldap:
+    logging: *logging
     image: vegardit/openldap:2.6.10
     restart: unless-stopped
     environment:

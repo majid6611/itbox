@@ -14,6 +14,7 @@ import (
 	"it-platform/backend/internal/audit"
 	"it-platform/backend/internal/auth"
 	"it-platform/backend/internal/employee"
+	"it-platform/backend/internal/modules"
 	"it-platform/backend/internal/syslog"
 )
 
@@ -44,7 +45,11 @@ func TestAuditThroughTheRouter(t *testing.T) {
 	if err := authSvc.EnsureAdmin(ctx, "boss@example.com", "correct-horse"); err != nil {
 		t.Fatal(err)
 	}
-	srv := &Server{Auth: authSvc, Employee: employee.NewService(pool), DB: pool, Audit: audit.NewService(pool), SystemLog: syslog.NewService(pool)}
+	reg, err := modules.NewRegistry("../../../modules")
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := &Server{Auth: authSvc, Employee: employee.NewService(pool), DB: pool, Audit: audit.NewService(pool), SystemLog: syslog.NewService(pool), Registry: reg}
 	syslog.Default = srv.SystemLog
 	defer func() { syslog.Default = nil }()
 	router := NewRouter(srv)
@@ -125,6 +130,14 @@ func TestAuditThroughTheRouter(t *testing.T) {
 	rec = do("GET", "/api/system-log/export?source=chat", "", cookie)
 	if !strings.Contains(rec.Body.String(), "time,level,source,message") || !strings.Contains(rec.Body.String(), "cannot reach storage") || strings.Contains(rec.Body.String(), "disk 85") {
 		t.Errorf("system log export: %s", rec.Body)
+	}
+
+	// Module output: needs a session, and only for modules that exist.
+	if rec := do("GET", "/api/modules/wiki/logs", "", ""); rec.Code != 401 {
+		t.Errorf("module logs without a session: %d", rec.Code)
+	}
+	if rec := do("GET", "/api/modules/not-a-module/logs", "", cookie); rec.Code != 404 {
+		t.Errorf("module logs for an unknown module: %d", rec.Code)
 	}
 	_ = http.StatusOK
 }

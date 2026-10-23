@@ -1,3 +1,11 @@
+# Cap each container's log (Docker keeps them forever otherwise, and a chatty
+# container can fill a small disk): 3 files of 10 MB per container.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 networks:
   edge:
     external: true
@@ -5,6 +13,7 @@ networks:
 
 services:
   chat:
+    logging: *logging
     # Built from the source shipped with the module (MODULE_DIR/MODULE_VERSION
     # are filled in by the platform). The version in the tag is what keeps the
     # previous version's image around for a rollback — so bump the module's

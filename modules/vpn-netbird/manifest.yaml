@@ -10,7 +10,7 @@ description: >-
   grant access to. Managed from this platform's own panel — Netbird's own
   dashboard is never installed.
 category: networking
-version: "1.0.0"
+version: "1.0.1"
 compose_file: docker-compose.yaml
 config_schema:
   - key: owner_email

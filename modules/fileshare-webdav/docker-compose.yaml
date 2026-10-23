@@ -1,3 +1,11 @@
+# Cap each container's log (Docker keeps them forever otherwise, and a chatty
+# container can fill a small disk): 3 files of 10 MB per container.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 networks:
   default: {}
   edge:
@@ -12,6 +20,7 @@ services:
   # backend's syncWebdavLogin), and rewriting it on every container
   # recreate wiped them back to just the admin.
   webdav-config:
+    logging: *logging
     image: busybox:latest
     restart: "no"
     entrypoint: ["/bin/sh", "-c"]
@@ -36,6 +45,7 @@ services:
       - webdav_config:/config
 
   webdav:
+    logging: *logging
     image: ghcr.io/hacdias/webdav:latest
     restart: unless-stopped
     command: ["-c", "/config/config.yml"]

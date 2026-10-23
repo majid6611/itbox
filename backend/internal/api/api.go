@@ -106,6 +106,7 @@ func NewRouter(s *Server) http.Handler {
 	registerPortal(api, s)
 	registerAudit(api, s)
 	registerSystemLog(api, s)
+	registerModuleLogs(api, s)
 
 	s.Audit.StartPruning(context.Background())
 	s.SystemLog.StartPruning(context.Background())

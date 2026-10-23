@@ -1,3 +1,11 @@
+# Cap each container's log (Docker keeps them forever otherwise, and a chatty
+# container can fill a small disk): 3 files of 10 MB per container.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 networks:
   default: {}
   # Modules attach their web-facing service to this network (as an external
@@ -18,6 +26,7 @@ networks:
 
 services:
   nginx:
+    logging: *logging
     image: nginx:1.27-alpine
     container_name: itplatform-nginx
     restart: unless-stopped
@@ -48,6 +57,7 @@ services:
       - frontend
 
   postgres:
+    logging: *logging
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
@@ -70,6 +80,7 @@ services:
       edge: {}
 
   backend:
+    logging: *logging
     build: ./backend
     restart: unless-stopped
     networks:
@@ -107,6 +118,7 @@ services:
         condition: service_healthy
 
   frontend:
+    logging: *logging
     build: ./frontend
     restart: unless-stopped
     depends_on:
@@ -121,6 +133,7 @@ services:
   # (nothing to install/uninstall from the panel) — it's core
   # infrastructure, alongside nginx and postgres.
   internal-gateway:
+    logging: *logging
     image: netbirdio/netbird:latest
     container_name: itplatform-internal-gateway
     hostname: itplatform-internal-gateway

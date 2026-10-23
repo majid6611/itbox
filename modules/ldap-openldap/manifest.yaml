@@ -4,7 +4,7 @@ description: >-
   Central user directory (LDAP). Users and groups are managed from this
   platform's own Users panel — no separate admin UI to learn.
 category: identity
-version: "1.0.0"
+version: "1.0.1"
 compose_file: docker-compose.yaml
 config_schema:
   - key: org_name

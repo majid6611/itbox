@@ -11,7 +11,7 @@ description: >-
   already be provisioned on the target machine (via its BIOS/MEBx setup)
   — this module doesn't do that provisioning itself.
 category: mesh
-version: "1.0.0"
+version: "1.0.1"
 compose_file: docker-compose.yaml
 config_schema:
   # Generated once at install, used only by the init container (to create

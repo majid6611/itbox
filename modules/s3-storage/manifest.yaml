@@ -7,7 +7,7 @@ description: >-
   Uses Garage (Deuxfleurs); MinIO's community edition was discontinued
   in 2026 (repo archived), so this platform doesn't use it.
 category: storage
-version: "1.0.0"
+version: "1.0.1"
 compose_file: docker-compose.yaml
 config_schema:
   - key: default_bucket

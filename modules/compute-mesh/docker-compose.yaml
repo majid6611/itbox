@@ -1,3 +1,11 @@
+# Cap each container's log (Docker keeps them forever otherwise, and a chatty
+# container can fill a small disk): 3 files of 10 MB per container.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 # MeshCentral is the engine (AMT power control + Wake-on-LAN relay across
 # an agent network) but is never exposed anywhere — not routed through
 # the edge nginx (no `routes` in manifest.yaml), not linked to from any
@@ -27,6 +35,7 @@ services:
   # one-shot-init-before-the-real-service shape as vpn-netbird's
   # netbird-config service.
   meshcentral-init:
+    logging: *logging
     image: ghcr.io/ylianst/meshcentral:1.2.5-slim
     restart: "no"
     entrypoint: ["node"]
@@ -44,6 +53,7 @@ services:
       - meshcentral-data:/opt/meshcentral/meshcentral-data
 
   meshcentral:
+    logging: *logging
     image: ghcr.io/ylianst/meshcentral:1.2.5-slim
     restart: unless-stopped
     volumes:

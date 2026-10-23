@@ -9,7 +9,7 @@ description: >-
   Outlook, Thunderbird, ...) using their existing company login, since
   Radicale speaks the same protocol those apps already understand.
 category: collaboration
-version: "1.0.0"
+version: "1.0.1"
 compose_file: docker-compose.yaml
 config_schema:
   # Generated once at install. Two internal Radicale accounts share this

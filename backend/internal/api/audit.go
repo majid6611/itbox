@@ -20,7 +20,7 @@ import (
 var auditSkip = map[string]bool{"login": true, "portal-login": true}
 
 // auditedReads are reads that still belong in the log (data leaving).
-var auditedReads = map[string]bool{"export-audit-log": true, "export-system-log": true}
+var auditedReads = map[string]bool{"export-audit-log": true, "export-system-log": true, "module-logs": true}
 
 var pathParam = regexp.MustCompile(`\{([^}]+)\}`)
 

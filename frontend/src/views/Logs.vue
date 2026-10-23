@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
 import { api } from '../api/client'
+import { useModulesStore } from '../stores/modules'
 
 interface AuditEntry {
   id: number
@@ -15,7 +16,7 @@ interface AuditEntry {
 }
 
 const PAGE = 100
-const tab = ref<'activity' | 'system'>('activity')
+const tab = ref<'activity' | 'system' | 'output'>('activity')
 
 interface SystemEvent {
   id: number
@@ -133,6 +134,48 @@ function downloadSystem() {
   window.location.href = `/api/system-log/export${sysQuery()}`
 }
 
+const modules = useModulesStore()
+const outputFor = ref('platform')
+const outputLines = ref(300)
+const outputText = ref('')
+const outputLoading = ref(false)
+const outputError = ref('')
+
+// Modules that have containers to read: anything installed.
+function installedModules() {
+  return modules.catalog.filter((m) => {
+    const st = modules.statuses[m.id]?.status
+    return st && st !== 'not_installed'
+  })
+}
+
+async function loadOutput() {
+  outputLoading.value = true
+  outputError.value = ''
+  try {
+    const res = await fetch(`/api/modules/${encodeURIComponent(outputFor.value)}/logs?lines=${outputLines.value}`, {
+      credentials: 'include',
+    })
+    if (!res.ok) throw new Error(String(res.status))
+    outputText.value = await res.text()
+  } catch {
+    outputText.value = ''
+    outputError.value = "Couldn't read the output."
+  } finally {
+    outputLoading.value = false
+  }
+}
+
+function downloadOutput() {
+  window.location.href = `/api/modules/${encodeURIComponent(outputFor.value)}/logs?lines=5000&download=true`
+}
+
+async function showOutput() {
+  tab.value = 'output'
+  if (modules.catalog.length === 0) await modules.fetchAll()
+  loadOutput()
+}
+
 function showSystem() {
   tab.value = 'system'
   loadSystem()
@@ -147,6 +190,7 @@ onMounted(load)
     <div class="tabs">
       <button :class="tab === 'activity' ? 'tab on' : 'tab'" @click="tab = 'activity'">Activity</button>
       <button :class="tab === 'system' ? 'tab on' : 'tab'" @click="showSystem">System</button>
+      <button :class="tab === 'output' ? 'tab on' : 'tab'" @click="showOutput">Module output</button>
     </div>
 
     <template v-if="tab === 'activity'">
@@ -208,6 +252,34 @@ onMounted(load)
       <span class="hint">{{ offset + 1 }}–{{ Math.min(offset + PAGE, total) }} of {{ total }}</span>
       <button class="secondary" :disabled="offset + PAGE >= total" @click="page(1)">Older</button>
     </div>
+    </template>
+
+    <template v-else-if="tab === 'output'">
+      <p class="subtitle">
+        The last lines each module wrote, for tracking down a problem. Passwords and keys are hidden — still,
+        look before you send it to anyone.
+      </p>
+      <form class="filters" @submit.prevent="loadOutput">
+        <label>
+          Module
+          <select v-model="outputFor" @change="loadOutput">
+            <option value="platform">The platform itself</option>
+            <option v-for="m in installedModules()" :key="m.id" :value="m.id">{{ m.name }}</option>
+          </select>
+        </label>
+        <label>
+          Lines
+          <select v-model.number="outputLines" @change="loadOutput">
+            <option :value="100">100</option>
+            <option :value="300">300</option>
+            <option :value="1000">1000</option>
+          </select>
+        </label>
+        <button type="submit" :disabled="outputLoading">{{ outputLoading ? 'Loading…' : 'Refresh' }}</button>
+        <button type="button" class="secondary" @click="downloadOutput">Download</button>
+      </form>
+      <p v-if="outputError" class="result bad">{{ outputError }}</p>
+      <pre class="output">{{ outputText }}</pre>
     </template>
 
     <template v-else>
@@ -348,6 +420,18 @@ h1 {
 .tab.on {
   color: var(--text);
   border-bottom-color: var(--text);
+}
+.output {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.75rem 1rem;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  max-height: 32rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 .message {
   word-break: break-word;

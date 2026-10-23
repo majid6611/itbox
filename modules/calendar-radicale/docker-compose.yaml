@@ -1,3 +1,11 @@
+# Cap each container's log (Docker keeps them forever otherwise, and a chatty
+# container can fill a small disk): 3 files of 10 MB per container.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 # Radicale (CalDAV) is the engine, but nobody ever sees its own UI — it
 # doesn't have one worth exposing anyway. The backend talks to it over
 # the shared edge network to manage events server-side for the portal's
@@ -26,6 +34,7 @@ services:
   # itself, not something docker-compose's plain ${var} substitution can
   # produce.
   radicale-config:
+    logging: *logging
     image: busybox:latest
     restart: "no"
     entrypoint: ["/bin/sh", "-c"]
@@ -78,6 +87,7 @@ services:
       - radicale_config:/config
 
   radicale:
+    logging: *logging
     image: tomsquest/docker-radicale:3.7.6.0
     restart: unless-stopped
     volumes:
