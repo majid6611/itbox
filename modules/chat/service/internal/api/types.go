@@ -19,6 +19,16 @@ type MessageOut struct {
 	EditedAt          string         `json:"edited_at,omitempty"`
 	DeletedAt         string         `json:"deleted_at,omitempty"`
 	Attachment        *AttachmentOut `json:"attachment,omitempty"`
+	ReplyTo           *ReplyOut      `json:"reply_to,omitempty"`
+}
+
+// ReplyOut is the quote shown above a reply: who said it and the start of
+// what they said (empty with Deleted set if the original was deleted).
+type ReplyOut struct {
+	ID      int64  `json:"id"`
+	Sender  string `json:"sender_username"`
+	Content string `json:"content"`
+	Deleted bool   `json:"deleted,omitempty"`
 }
 
 type AttachmentOut struct {

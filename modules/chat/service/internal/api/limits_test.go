@@ -33,3 +33,20 @@ func TestCheckLength(t *testing.T) {
 		t.Fatal("over the max is refused")
 	}
 }
+
+func TestTypingThrottle(t *testing.T) {
+	s := &Server{}
+	now := time.Now()
+	if !s.typingAllowed("a", now) {
+		t.Fatal("first notice goes through")
+	}
+	if s.typingAllowed("a", now.Add(typingMinGap/2)) {
+		t.Fatal("a second one too soon is dropped")
+	}
+	if !s.typingAllowed("a", now.Add(typingMinGap)) {
+		t.Fatal("allowed again after the gap")
+	}
+	if !s.typingAllowed("b", now) {
+		t.Fatal("another user is unaffected")
+	}
+}

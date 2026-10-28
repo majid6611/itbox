@@ -158,6 +158,13 @@ func (s *Server) loadMessageForMutation(ctx context.Context, id int64, username 
 	if a, ok := attachments[m.ID]; ok {
 		m.Attachment = &a
 	}
+	replies, err := s.repliesFor(ctx, []int64{m.ID})
+	if err != nil {
+		return nil, internalError("load reply", err)
+	}
+	if r, ok := replies[m.ID]; ok {
+		m.ReplyTo = &r
+	}
 	return &m, nil
 }
 

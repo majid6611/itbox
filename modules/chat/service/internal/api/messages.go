@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/jackc/pgx/v5"
 
 	"it-platform/chat/internal/directory"
 	"it-platform/chat/internal/hub"
@@ -43,6 +44,7 @@ type SendMessageInput struct {
 		RecipientUsername string `json:"recipient_username,omitempty"`
 		CustomGroupID     int64  `json:"custom_group_id,omitempty"`
 		Content           string `json:"content"`
+		ReplyToID         int64  `json:"reply_to_id,omitempty"`
 	}
 }
 
@@ -147,7 +149,13 @@ func registerMessages(api huma.API, s *Server) {
 			}
 		}
 
-		msg, err := s.insertMessage(ctx, username, in.Body.GroupName, in.Body.RecipientUsername, in.Body.CustomGroupID, content)
+		if in.Body.ReplyToID != 0 {
+			if err := s.requireReplyInThread(ctx, in.Body.ReplyToID, username, in.Body.GroupName, in.Body.RecipientUsername, in.Body.CustomGroupID); err != nil {
+				return nil, err
+			}
+		}
+
+		msg, err := s.insertMessage(ctx, username, in.Body.GroupName, in.Body.RecipientUsername, in.Body.CustomGroupID, content, in.Body.ReplyToID)
 		if err != nil {
 			return nil, internalError("save message", err)
 		}
@@ -200,6 +208,13 @@ func (s *Server) fetchMessages(ctx context.Context, me, group, with string, cust
 	if err != nil {
 		return nil, err
 	}
+	return s.collectMessages(ctx, rows)
+}
+
+// collectMessages reads message rows (selected with the column list the
+// queries above and in search.go share) and attaches each message's file
+// and reply quote in one follow-up query apiece rather than one per message.
+func (s *Server) collectMessages(ctx context.Context, rows pgx.Rows) ([]MessageOut, error) {
 	defer rows.Close()
 
 	var messages []MessageOut
@@ -240,9 +255,16 @@ func (s *Server) fetchMessages(ctx context.Context, me, group, with string, cust
 	if err != nil {
 		return nil, err
 	}
+	replies, err := s.repliesFor(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
 	for i := range messages {
 		if a, ok := attachments[messages[i].ID]; ok {
 			messages[i].Attachment = &a
+		}
+		if r, ok := replies[messages[i].ID]; ok {
+			messages[i].ReplyTo = &r
 		}
 	}
 	return messages, nil
@@ -272,7 +294,7 @@ func (s *Server) attachmentsFor(ctx context.Context, messageIDs []int64) (map[in
 // insertMessage writes a message and returns it in the same shape the live
 // push and the history endpoint both use. Caller must have already
 // validated the target and, for a private group, membership.
-func (s *Server) insertMessage(ctx context.Context, sender, group, recipient string, customGroupID int64, content string) (*MessageOut, error) {
+func (s *Server) insertMessage(ctx context.Context, sender, group, recipient string, customGroupID int64, content string, replyTo int64) (*MessageOut, error) {
 	var groupArg, recipientArg *string
 	var customGroupArg *int64
 	if group != "" {
@@ -286,14 +308,27 @@ func (s *Server) insertMessage(ctx context.Context, sender, group, recipient str
 	}
 	m := &MessageOut{SenderUsername: sender, GroupName: group, RecipientUsername: recipient, CustomGroupID: customGroupID, Content: content}
 	var createdAt time.Time
+	var replyArg *int64
+	if replyTo != 0 {
+		replyArg = &replyTo
+	}
 	err := s.DB.QueryRow(ctx, `
-		INSERT INTO chat_messages (sender_username, group_name, recipient_username, custom_group_id, content)
-		VALUES ($1, $2, $3, $4, $5) RETURNING id, created_at
-	`, sender, groupArg, recipientArg, customGroupArg, content).Scan(&m.ID, &createdAt)
+		INSERT INTO chat_messages (sender_username, group_name, recipient_username, custom_group_id, content, reply_to_id)
+		VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, created_at
+	`, sender, groupArg, recipientArg, customGroupArg, content, replyArg).Scan(&m.ID, &createdAt)
 	if err != nil {
 		return nil, err
 	}
 	m.CreatedAt = createdAt.Format(time.RFC3339)
+	if replyTo != 0 {
+		replies, err := s.repliesFor(ctx, []int64{m.ID})
+		if err != nil {
+			return nil, err
+		}
+		if r, ok := replies[m.ID]; ok {
+			m.ReplyTo = &r
+		}
+	}
 	return m, nil
 }
 
@@ -327,6 +362,9 @@ func (s *Server) pushEvent(ctx context.Context, m *MessageOut, eventType string)
 	if m.Attachment != nil {
 		hm.Attachment = &hub.Attachment{ID: m.Attachment.ID, Filename: m.Attachment.Filename, Size: m.Attachment.Size}
 	}
+	if m.ReplyTo != nil {
+		hm.ReplyTo = &hub.Reply{ID: m.ReplyTo.ID, Sender: m.ReplyTo.Sender, Content: m.ReplyTo.Content, Deleted: m.ReplyTo.Deleted}
+	}
 	event := hub.Event{Type: eventType, Message: hm}
 	switch {
 	case m.GroupName != "":
@@ -343,6 +381,59 @@ func (s *Server) pushEvent(ctx context.Context, m *MessageOut, eventType string)
 		s.Hub.SendTo(members, event)
 	default:
 		s.Hub.SendTo([]string{m.SenderUsername, m.RecipientUsername}, event)
+	}
+	return nil
+}
+
+// repliesFor returns, for each given message id that is a reply, the quote
+// of the message it answers.
+func (s *Server) repliesFor(ctx context.Context, messageIDs []int64) (map[int64]ReplyOut, error) {
+	out := make(map[int64]ReplyOut)
+	if len(messageIDs) == 0 {
+		return out, nil
+	}
+	rows, err := s.DB.Query(ctx, `
+		SELECT m.id, r.id, r.sender_username, left(r.content, 140), r.deleted_at IS NOT NULL
+		FROM chat_messages m JOIN chat_messages r ON r.id = m.reply_to_id
+		WHERE m.id = ANY($1)`, messageIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var messageID int64
+		var r ReplyOut
+		if err := rows.Scan(&messageID, &r.ID, &r.Sender, &r.Content, &r.Deleted); err != nil {
+			return nil, err
+		}
+		out[messageID] = r
+	}
+	return out, rows.Err()
+}
+
+// requireReplyInThread rejects a reply whose quoted message belongs to a
+// different conversation — otherwise a reply would leak a snippet of a
+// thread the reader may not be able to see.
+func (s *Server) requireReplyInThread(ctx context.Context, replyTo int64, me, group, with string, customGroup int64) error {
+	var rGroup, rRecipient *string
+	var rCustom *int64
+	var rSender string
+	err := s.DB.QueryRow(ctx, `SELECT group_name, recipient_username, custom_group_id, sender_username FROM chat_messages WHERE id = $1`, replyTo).
+		Scan(&rGroup, &rRecipient, &rCustom, &rSender)
+	if err != nil {
+		return huma.Error400BadRequest("the message you're replying to doesn't exist")
+	}
+	same := false
+	switch {
+	case group != "":
+		same = rGroup != nil && *rGroup == group
+	case customGroup != 0:
+		same = rCustom != nil && *rCustom == customGroup
+	default:
+		same = rRecipient != nil && ((rSender == me && *rRecipient == with) || (rSender == with && *rRecipient == me))
+	}
+	if !same {
+		return huma.Error400BadRequest("you can only reply to a message in the same conversation")
 	}
 	return nil
 }

@@ -5,6 +5,8 @@ import (
 	"it-platform/chat/internal/dbx"
 	"log"
 	"net/http"
+	"sync"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
@@ -24,6 +26,9 @@ type Server struct {
 	Hub *hub.Hub
 
 	limiter *rateLimiter
+
+	typingMu sync.Mutex
+	typingAt map[string]time.Time
 }
 
 func NewRouter(s *Server) http.Handler {
@@ -48,6 +53,7 @@ func NewRouter(s *Server) http.Handler {
 	registerAttachments(api, s)
 	registerEditDelete(api, s)
 	registerReadState(api, s)
+	registerSearch(api, s)
 
 	// The WebSocket upgrade isn't a huma operation — it needs the raw
 	// http.ResponseWriter/Request the coder/websocket library upgrades

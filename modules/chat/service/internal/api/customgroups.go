@@ -47,6 +47,12 @@ type AddMemberInput struct {
 	}
 }
 
+type RemoveMemberInput struct {
+	SessionToken string `cookie:"itp_employee_session"`
+	ID           int64  `path:"id"`
+	Username     string `path:"username"`
+}
+
 func registerCustomGroups(api huma.API, s *Server) {
 	huma.Register(api, huma.Operation{
 		OperationID: "list-my-chat-groups",
@@ -168,7 +174,70 @@ func registerCustomGroups(api huma.API, s *Server) {
 		var groupName string
 		if err := s.DB.QueryRow(ctx, `SELECT name FROM chat_custom_groups WHERE id = $1`, in.ID).Scan(&groupName); err == nil {
 			s.Hub.SendTo([]string{newMember}, hub.Event{Type: "group_invite", Group: &hub.GroupInvite{ID: in.ID, Name: groupName}})
+			// The people already in the group see the new name in the member
+			// list without a reload.
+			if existing, err := s.groupMembers(ctx, in.ID); err == nil {
+				s.Hub.SendTo(existing, hub.Event{Type: "group_changed", Group: &hub.GroupInvite{ID: in.ID, Name: groupName}})
+			}
 		}
+		out := &ActionOutput{}
+		out.Body.Success = true
+		return out, nil
+	})
+
+	huma.Register(api, huma.Operation{
+		OperationID: "remove-chat-group-member",
+		Method:      "DELETE",
+		Path:        "/api/portal/chat/groups/{id}/members/{username}",
+		Summary:     "Leave a private group, or (as its creator) remove someone from it",
+	}, func(ctx context.Context, in *RemoveMemberInput) (*ActionOutput, error) {
+		username, err := s.requireEmployeeAuth(ctx, in.SessionToken)
+		if err != nil {
+			return nil, err
+		}
+		isMember, err := s.isGroupMember(ctx, in.ID, username)
+		if err != nil {
+			return nil, internalError("check membership", err)
+		}
+		if !isMember {
+			return nil, huma.Error403Forbidden("you're not a member of this group")
+		}
+		var groupName, createdBy string
+		if err := s.DB.QueryRow(ctx, `SELECT name, created_by FROM chat_custom_groups WHERE id = $1`, in.ID).Scan(&groupName, &createdBy); err != nil {
+			return nil, huma.Error404NotFound("no such group")
+		}
+		// Anyone can leave. Removing someone else is the creator's call — or
+		// anyone's once the creator has left, so a group is never stuck with
+		// nobody able to tidy its member list.
+		if in.Username != username {
+			creatorStillIn, err := s.isGroupMember(ctx, in.ID, createdBy)
+			if err != nil {
+				return nil, internalError("check membership", err)
+			}
+			if creatorStillIn && createdBy != username {
+				return nil, huma.Error403Forbidden("only the person who made the group can remove others")
+			}
+		}
+		tag, err := s.DB.Exec(ctx, `DELETE FROM chat_group_members WHERE group_id = $1 AND username = $2`, in.ID, in.Username)
+		if err != nil {
+			return nil, internalError("remove member", err)
+		}
+		if tag.RowsAffected() == 0 {
+			return nil, huma.Error404NotFound("that person isn't in this group")
+		}
+
+		remaining, err := s.groupMembers(ctx, in.ID)
+		if err != nil {
+			return nil, internalError("list members", err)
+		}
+		if len(remaining) == 0 {
+			// Nobody left to read it: drop the group and, by cascade, its messages.
+			if _, err := s.DB.Exec(ctx, `DELETE FROM chat_custom_groups WHERE id = $1`, in.ID); err != nil {
+				return nil, internalError("delete empty group", err)
+			}
+		}
+		s.Hub.SendTo(append(remaining, in.Username), hub.Event{Type: "group_changed", Group: &hub.GroupInvite{ID: in.ID, Name: groupName}})
+
 		out := &ActionOutput{}
 		out.Body.Success = true
 		return out, nil

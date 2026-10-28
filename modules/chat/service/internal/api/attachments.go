@@ -121,7 +121,7 @@ func registerAttachments(api huma.API, s *Server) {
 			return nil, huma.Error400BadRequest(fmt.Sprintf("file too large — max %d MB", maxAttachmentSize/1024/1024))
 		}
 
-		msg, err := s.insertMessage(ctx, username, data.GroupName, data.RecipientUsername, data.CustomGroupID, data.Caption)
+		msg, err := s.insertMessage(ctx, username, data.GroupName, data.RecipientUsername, data.CustomGroupID, data.Caption, 0)
 		if err != nil {
 			return nil, internalError("save message", err)
 		}

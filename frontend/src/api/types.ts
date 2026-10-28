@@ -236,6 +236,14 @@ export interface ChatMessage {
   edited_at?: string
   deleted_at?: string
   attachment?: ChatAttachment
+  reply_to?: ChatReply
+}
+
+export interface ChatReply {
+  id: number
+  sender_username: string
+  content: string
+  deleted?: boolean
 }
 
 export interface ChatUser {
@@ -286,7 +294,8 @@ export interface CalendarSettings {
 }
 
 export interface ChatEvent {
-  type: 'message' | 'message_updated' | 'presence' | 'group_invite'
+  type: 'message' | 'message_updated' | 'presence' | 'group_invite' | 'group_changed' | 'typing'
+  typing?: { username: string; group_name?: string; recipient_username?: string; custom_group_id?: number }
   message?: ChatMessage
   presence?: { username: string; online: boolean }
   group?: { id: number; name: string }

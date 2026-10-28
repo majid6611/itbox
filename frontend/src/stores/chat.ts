@@ -40,11 +40,16 @@ export const useChatStore = defineStore('chat', {
     unread: {} as Record<string, number>,
     // Whether a thread may have older messages than the ones loaded.
     hasMore: {} as Record<string, boolean>,
+    // Who is typing where: thread key -> username -> when that notice
+    // expires (ms). A notice lapses on its own; nobody sends "stopped".
+    typing: {} as Record<string, Record<string, number>>,
+    lastTypingSent: 0,
     ws: null as WebSocket | null,
     wsConnected: false,
   }),
   getters: {
     hasUnread: (state) => Object.values(state.unread).some((n) => n > 0),
+    totalUnread: (state) => Object.values(state.unread).reduce((a, n) => a + n, 0),
   },
   actions: {
     async fetchChannels() {
@@ -128,15 +133,19 @@ export const useChatStore = defineStore('chat', {
     // since a backfill and a live push can both deliver the same message.
     addMessage(m: ChatMessage) {
       const key = keyForMessage(m, this.myUsername)
-      if (!this.messagesByTarget[key]) this.messagesByTarget[key] = []
       const list = this.messagesByTarget[key]
+      // A thread that hasn't been opened has no list yet; its history is
+      // fetched in full when it is, so don't start it with just this one
+      // message (opening it would then show only that).
+      if (!list) return true
       if (list.some((x) => x.id === m.id)) return false
       list.push(m)
       return true
     },
-    async sendMessage(kind: TargetKind, name: string | number, content: string) {
-      const body =
-        kind === 'group' ? { group_name: name, content } : kind === 'custom' ? { custom_group_id: name, content } : { recipient_username: name, content }
+    async sendMessage(kind: TargetKind, name: string | number, content: string, replyToId?: number) {
+      const target =
+        kind === 'group' ? { group_name: name } : kind === 'custom' ? { custom_group_id: name } : { recipient_username: name }
+      const body = { ...target, content, ...(replyToId ? { reply_to_id: replyToId } : {}) }
       // Not appended locally here on purpose — the server echoes every
       // sent message back over the WebSocket (group/custom group: to
       // everyone who can see it, DM: to both participants, including the
@@ -152,6 +161,39 @@ export const useChatStore = defineStore('chat', {
       form.append('caption', caption)
       form.append('file', file)
       await api.upload('/portal/chat/attachments', form)
+    },
+    async leaveGroup(groupId: number, username: string) {
+      await api.delete(`/portal/chat/groups/${groupId}/members/${encodeURIComponent(username)}`)
+      await this.fetchCustomGroups()
+    },
+    async search(q: string): Promise<ChatMessage[]> {
+      const res = await api.get<{ messages: ChatMessage[] }>(`/portal/chat/search?q=${encodeURIComponent(q)}`)
+      return res.messages ?? []
+    },
+    // Make sure a message is in the loaded part of its thread, paging
+    // backwards until it is (search results can be arbitrarily old).
+    async loadUntil(kind: TargetKind, name: string | number, id: number) {
+      const key = targetKey(kind, name)
+      if (!this.messagesByTarget[key]) await this.fetchHistory(kind, name)
+      for (let i = 0; i < 40; i++) {
+        const list = this.messagesByTarget[key]
+        if (!list.length || list[0].id <= id || !this.hasMore[key]) return
+        await this.fetchOlder(kind, name)
+      }
+    },
+    // Tell the others in the open thread that we're typing — at most one
+    // notice every few seconds, which the receiving side lets lapse.
+    sendTyping(kind: TargetKind, name: string | number) {
+      const now = Date.now()
+      if (!this.ws || this.ws.readyState !== WebSocket.OPEN || now - this.lastTypingSent < 3000) return
+      this.lastTypingSent = now
+      const target =
+        kind === 'group' ? { group_name: name } : kind === 'custom' ? { custom_group_id: name } : { recipient_username: name }
+      this.ws.send(JSON.stringify({ type: 'typing', ...target }))
+    },
+    typingIn(key: string, now: number): string[] {
+      const t = this.typing[key] ?? {}
+      return Object.keys(t).filter((u) => t[u] > now)
     },
     async editMessage(id: number, content: string) {
       // Not applied locally here either, same reasoning as sendMessage —
@@ -228,7 +270,15 @@ export const useChatStore = defineStore('chat', {
         if (event.type === 'presence' && event.presence) {
           const u = this.users.find((x) => x.username === event.presence!.username)
           if (u) u.online = event.presence.online
-        } else if (event.type === 'group_invite') {
+        } else if (event.type === 'typing' && event.typing) {
+          const t = event.typing
+          const key = keyForMessage(
+            { sender_username: t.username, group_name: t.group_name, recipient_username: t.recipient_username, custom_group_id: t.custom_group_id } as ChatMessage,
+            this.myUsername,
+          )
+          if (!this.typing[key]) this.typing[key] = {}
+          this.typing[key][t.username] = Date.now() + 5000
+        } else if (event.type === 'group_invite' || event.type === 'group_changed') {
           // Being added to a group is otherwise silent until a reload —
           // same "went stale without a refresh" gap a missed message
           // would have, just for group membership instead of content.
@@ -237,6 +287,7 @@ export const useChatStore = defineStore('chat', {
           const m = event.message
           const key = keyForMessage(m, this.myUsername)
           if (!this.addMessage(m)) return
+          if (this.typing[key]) delete this.typing[key][m.sender_username]
           if (m.sender_username === this.myUsername) return
           // A message in the thread you're looking at is read on arrival; in
           // any other thread (or a background tab) it's unread, visible in
@@ -265,6 +316,7 @@ export const useChatStore = defineStore('chat', {
     disconnectWS() {
       this.myUsername = ''
       this.activeKey = null
+      this.unread = {}
       this.ws?.close()
       this.ws = null
     },

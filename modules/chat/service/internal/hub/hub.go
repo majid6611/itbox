@@ -34,7 +34,11 @@ type Event struct {
 	// delete on an existing one (Message.DeletedAt set for a delete) — the
 	// client finds the message by ID in whichever thread it belongs to and
 	// replaces it in place, same shape either way.
-	Type     string       `json:"type"` // "message" | "message_updated" | "presence" | "group_invite"
+	// "typing" says someone is typing in a thread; "group_changed" tells
+	// members of a private group (and anyone just removed from it) to refetch
+	// their group list.
+	Type     string       `json:"type"` // "message" | "message_updated" | "presence" | "group_invite" | "group_changed" | "typing"
+	Typing   *Typing      `json:"typing,omitempty"`
 	Message  *Message     `json:"message,omitempty"`
 	Presence *Presence    `json:"presence,omitempty"`
 	Group    *GroupInvite `json:"group,omitempty"`
@@ -49,6 +53,22 @@ type GroupInvite struct {
 	Name string `json:"name"`
 }
 
+// Typing names the thread the same way a Message does (exactly one of the
+// three target fields is set).
+type Typing struct {
+	Username          string `json:"username"`
+	GroupName         string `json:"group_name,omitempty"`
+	RecipientUsername string `json:"recipient_username,omitempty"`
+	CustomGroupID     int64  `json:"custom_group_id,omitempty"`
+}
+
+type Reply struct {
+	ID      int64  `json:"id"`
+	Sender  string `json:"sender_username"`
+	Content string `json:"content"`
+	Deleted bool   `json:"deleted,omitempty"`
+}
+
 type Message struct {
 	ID                int64       `json:"id"`
 	SenderUsername    string      `json:"sender_username"`
@@ -60,6 +80,7 @@ type Message struct {
 	EditedAt          string      `json:"edited_at,omitempty"`
 	DeletedAt         string      `json:"deleted_at,omitempty"`
 	Attachment        *Attachment `json:"attachment,omitempty"`
+	ReplyTo           *Reply      `json:"reply_to,omitempty"`
 }
 
 type Attachment struct {
@@ -178,7 +199,7 @@ func (h *Hub) unregister(c *conn) bool {
 // session exists); once it says no — they were disabled or deleted, or their
 // password was reset — the connection is closed, instead of carrying on
 // receiving other people's messages for as long as the tab stays open.
-func (h *Hub) Serve(w http.ResponseWriter, r *http.Request, username string, stillValid func(context.Context) bool) {
+func (h *Hub) Serve(w http.ResponseWriter, r *http.Request, username string, stillValid func(context.Context) bool, onClient func(context.Context, []byte)) {
 	ws, err := websocket.Accept(w, r, nil)
 	if err != nil {
 		return
@@ -229,13 +250,15 @@ func (h *Hub) Serve(w http.ResponseWriter, r *http.Request, username string, sti
 		}
 	}()
 
-	// Chat is push-only from the server's side (sending a message is a
-	// normal POST, not this socket) — the only thing ever read here is
-	// the connection dying, which is exactly what we're waiting for.
+	// Sending a message is a normal POST, not this socket. The only thing a
+	// client says over it is a typing notice, handed to onClient; the rest
+	// of the time this loop is just waiting for the connection to die.
 	for {
-		if _, _, err := ws.Read(r.Context()); err != nil {
+		_, data, err := ws.Read(r.Context())
+		if err != nil {
 			break
 		}
+		onClient(r.Context(), data)
 	}
 
 	ws.Close(websocket.StatusNormalClosure, "")

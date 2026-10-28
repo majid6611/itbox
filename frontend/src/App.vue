@@ -46,6 +46,16 @@ watch(
   },
 )
 
+// Unread chat count in the browser tab's title, e.g. "(3) IT Platform" — the
+// one place you can see it while working in another tab.
+const baseTitle = document.title.replace(/^\(\d+\+?\)\s*/, '')
+watch(
+  () => chat.totalUnread,
+  (n) => {
+    document.title = n > 0 ? `(${n > 99 ? '99+' : n}) ${baseTitle}` : baseTitle
+  },
+)
+
 async function handleLogout() {
   await auth.logout()
   router.push({ name: 'login' })
