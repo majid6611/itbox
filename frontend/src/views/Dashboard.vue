@@ -25,6 +25,23 @@ interface HealthCheck {
 const checks = ref<HealthCheck[] | null>(null)
 const problems = computed(() => (checks.value ?? []).filter((c) => c.status !== 'ok'))
 
+// Last 7 days of disk / memory / load, one point per 5 minutes.
+interface Sample { t: string; disk: number; mem: number; load: number }
+const samples = ref<Sample[]>([])
+const trends = computed(() => {
+  const last = samples.value[samples.value.length - 1]
+  if (samples.value.length < 2 || !last) return []
+  return [
+    { name: 'Disk', key: 'disk' as const, now: `${last.disk.toFixed(0)}%`, max: 100 },
+    { name: 'Memory', key: 'mem' as const, now: `${last.mem.toFixed(0)}%`, max: 100 },
+    { name: 'Load', key: 'load' as const, now: last.load.toFixed(2), max: Math.max(1, ...samples.value.map((x) => x.load)) },
+  ].map((tr) => ({ ...tr, points: sparkPoints(tr.key, tr.max) }))
+})
+function sparkPoints(key: 'disk' | 'mem' | 'load', max: number) {
+  const n = samples.value.length
+  return samples.value.map((x, i) => `${((i / (n - 1)) * 100).toFixed(1)},${(30 - (x[key] / max) * 28).toFixed(1)}`).join(' ')
+}
+
 const query = ref('')
 const moduleFilter = ref('all')
 const loadError = ref('')
@@ -40,12 +57,14 @@ async function refresh() {
   const results = await Promise.allSettled([
     modules.fetchAll(), users.fetchAll(),
     api.get<{ checks: HealthCheck[] }>('/health/report'),
+    api.get<{ samples: Sample[] }>('/health/history'),
   ])
   if (results[0].status === 'rejected') loadError.value = 'Could not load services. Try refreshing.'
   if (results[1].status === 'rejected') loadError.value += ' People data is currently unavailable.'
   const health = results[2]
   checks.value = health.status === 'fulfilled' ? health.value.checks ?? [] : null
   healthUnavailable.value = health.status === 'rejected'
+  samples.value = results[3].status === 'fulfilled' ? results[3].value.samples ?? [] : []
   refreshing.value = false
 }
 onMounted(refresh)
@@ -89,6 +108,13 @@ const attentionCount = computed(() => installed.value.filter((m) => ['stopped', 
           {{ p.detail }}
         </p>
       </template>
+      <div v-if="trends.length" class="trends" aria-label="Last 7 days">
+        <div v-for="tr in trends" :key="tr.name" class="trend">
+          <span class="trend-name">{{ tr.name }} <strong>{{ tr.now }}</strong></span>
+          <svg viewBox="0 0 100 32" preserveAspectRatio="none" role="img" :aria-label="`${tr.name}, last 7 days`"><polyline :points="tr.points" fill="none" stroke="currentColor" stroke-width="1.5" vector-effect="non-scaling-stroke" /></svg>
+        </div>
+        <span class="hint trend-note">Last 7 days</span>
+      </div>
     </div>
 
     <p v-if="modules.loading" class="hint">Loading…</p>
@@ -217,6 +243,21 @@ const attentionCount = computed(() => installed.value.filter((m) => ['stopped', 
 .health-ok {
   margin: 0;
 }
+.trends {
+  display: flex;
+  gap: 1.25rem;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  margin-top: 0.9rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid var(--border, rgba(128, 128, 128, 0.25));
+  color: var(--text-dim);
+}
+.trend { flex: 1 1 8rem; min-width: 7rem; }
+.trend-name { display: block; font-size: 0.78rem; margin-bottom: 0.2rem; }
+.trend-name strong { color: var(--text, inherit); margin-left: 0.3rem; }
+.trend svg { width: 100%; height: 32px; display: block; }
+.trend-note { font-size: 0.72rem; }
 h1 {
   margin-bottom: 0.35rem;
 }

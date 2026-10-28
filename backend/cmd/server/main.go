@@ -71,6 +71,7 @@ func main() {
 		DatabaseURL:          cfg.DatabaseURL,
 		SnapshotDir:          cfg.SnapshotDir,
 		GatewayContainerName: cfg.GatewayContainerName,
+		MonitorURL:           cfg.MonitorURL,
 	}
 	go srv.SyncGatewayRoutesOnStart()
 	router := api.NewRouter(srv)

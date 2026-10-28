@@ -69,15 +69,20 @@ if [ -z "${SKIP_CONFIG:-}" ]; then
   # Nobody ever needs to know or type this one.
   postgres_password=$(openssl rand -base64 24 | tr -d '/+=' | head -c 32)
 
+  # Holds the admin and DB passwords — owner-only from the first byte.
+  umask 077
   cat > "$REPO_ROOT/.env" <<EOF
 POSTGRES_PASSWORD=${postgres_password}
 BASE_DOMAIN=${base_domain}
 ADMIN_EMAIL=${admin_email}
 ADMIN_PASSWORD=${admin_password}
 EOF
+  umask 022
   echo
   echo ".env written."
 fi
+# Also tightens an .env left by an older install (it used to be world-readable).
+chmod 600 "$REPO_ROOT/.env"
 echo
 
 # --- 3. Firewall -------------------------------------------------------------

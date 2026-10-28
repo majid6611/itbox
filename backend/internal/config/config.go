@@ -25,6 +25,11 @@ type Config struct {
 	// ModuleUpdateRepo is the GitHub repository ("owner/name") the Module
 	// Store reads new and updated modules from. Empty turns updates off.
 	ModuleUpdateRepo string
+
+	// MonitorURL is where licensed installs send their monitoring reports.
+	// "off" turns reporting off entirely (supporters running their own
+	// service point this at theirs).
+	MonitorURL string
 }
 
 func Load() (*Config, error) {
@@ -44,6 +49,7 @@ func Load() (*Config, error) {
 		GatewayContainerName: getEnv("GATEWAY_CONTAINER_NAME", "itplatform-internal-gateway"),
 
 		ModuleUpdateRepo: getEnv("MODULE_UPDATE_REPO", "majid6611/itbox"),
+		MonitorURL:       getEnv("MONITOR_URL", "https://itboxmonitor.yycit.net"),
 	}
 
 	if cfg.DatabaseURL == "" {

@@ -43,6 +43,9 @@ type Server struct {
 	// to `docker exec` its one-time NetBird enrollment.
 	GatewayContainerName string
 
+	// MonitorURL is the vendor endpoint for monitoring reports (see report.go).
+	MonitorURL string
+
 	// Separate limiters for the two login endpoints — kept apart so a
 	// flood of failed employee logins (a much larger, less trusted
 	// population) can never eat into the admin login's own budget.
@@ -92,6 +95,8 @@ func NewRouter(s *Server) http.Handler {
 
 	registerHealth(api, s)
 	registerHealthReport(api, s)
+	registerHealthHistory(api, s)
+	registerLicence(api, s)
 	registerAuth(api, s)
 	registerModules(api, s)
 	registerUsers(api, s)
@@ -111,6 +116,8 @@ func NewRouter(s *Server) http.Handler {
 	s.Audit.StartPruning(context.Background())
 	s.SystemLog.StartPruning(context.Background())
 	s.startHealthWatch(context.Background())
+	s.startSampler(context.Background())
+	s.startReporter(context.Background())
 	s.startVpnWatch(context.Background())
 	s.startUpdateWatch(context.Background())
 	s.startBackupScheduler(context.Background())

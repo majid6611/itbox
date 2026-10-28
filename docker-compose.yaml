@@ -103,6 +103,9 @@ services:
       NGINX_CONF_DIR: /app/nginx/conf.d
       NGINX_CONTAINER_NAME: itplatform-nginx
       GATEWAY_CONTAINER_NAME: itplatform-internal-gateway
+      # Where licensed installs send monitoring reports; empty = built-in
+      # default, "off" = never send. Set in .env to point at another service.
+      MONITOR_URL: ${MONITOR_URL:-}
     volumes:
       # Writable, not :ro — the Module Store's update check downloads
       # brand-new and updated modules' manifest.yaml/docker-compose.yaml

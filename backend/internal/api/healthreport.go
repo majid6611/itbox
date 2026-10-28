@@ -114,7 +114,7 @@ func (s *Server) healthChecks(ctx context.Context) ([]HealthCheck, error) {
 		}
 		checks = append(checks, s.moduleHealth(ctx, st.ModuleID, name))
 	}
-	return append(checks, s.diskHealth(), s.backupHealth(ctx)), nil
+	return append(checks, s.diskHealth(), s.memoryHealth(), s.backupHealth(ctx)), nil
 }
 
 func registerHealthReport(api huma.API, s *Server) {
