@@ -191,6 +191,16 @@ export interface WikiPageSummary {
   id: number
   path: string
   title: string
+  // Search results only: matching text with the matched words in << >>.
+  snippet?: string
+}
+
+export interface WikiRecent {
+  id: number
+  path: string
+  title: string
+  author: string
+  updated_at: string
 }
 
 export interface WikiPage {
@@ -200,6 +210,8 @@ export interface WikiPage {
   content: string
   can_write: boolean
   updated_at: string
+  updated_by: string
+  revision_id: number
 }
 
 export interface WikiRevision {

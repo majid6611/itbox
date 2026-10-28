@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 import { EditorContent, useEditor } from '@tiptap/vue-3'
 import StarterKit from '@tiptap/starter-kit'
 import Link from '@tiptap/extension-link'
@@ -14,6 +14,7 @@ import TableCell from '@tiptap/extension-table-cell'
 import { useWikiStore } from '../../stores/wiki'
 import WikiTreeNode, { type WikiTreeNodeData } from '../../components/WikiTreeNode.vue'
 import WikiToolbar from '../../components/WikiToolbar.vue'
+import { ApiError } from '../../api/client'
 import type { WikiPageSummary } from '../../api/types'
 
 const route = useRoute()
@@ -26,6 +27,13 @@ const activePath = computed(() => {
 })
 
 const editing = ref(false)
+// True once the editor has unsaved changes — leaving the page (another page
+// in the tree, another tab, closing the window) then asks first instead of
+// silently throwing the work away.
+const dirty = ref(false)
+const conflict = ref(false)
+const saveError = ref('')
+const newPageError = ref('')
 const showHistory = ref(false)
 const showNewPage = ref(false)
 const newPage = ref({ path: '', title: '' })
@@ -76,6 +84,9 @@ const editor = useEditor({
   extensions: [...contentExtensions, Placeholder.configure({ placeholder: 'Write something…' })],
   editable: false,
   content: '',
+  onUpdate: () => {
+    if (editing.value) dirty.value = true
+  },
   editorProps: {
     handleDrop(view, event, _slice, moved) {
       if (moved) return false // internal drag (e.g. reordering selection), not a file drop
@@ -152,6 +163,9 @@ const tree = computed<WikiTreeNodeData[]>(() => {
 const pendingEditPath = ref<string | null>(null)
 
 async function loadPage(path: string) {
+  dirty.value = false
+  conflict.value = false
+  saveError.value = ''
   showHistory.value = false
   previewRevisionId.value = null
   notFound.value = false
@@ -197,24 +211,61 @@ function startEdit() {
 }
 
 function cancelEdit() {
+  if (dirty.value && !confirm('Discard your changes?')) return
   editing.value = false
+  dirty.value = false
+  conflict.value = false
+  saveError.value = ''
   editor.value?.setEditable(false)
   editor.value?.commands.setContent(wiki.current?.content ?? '')
   titleDraft.value = wiki.current?.title ?? ''
 }
 
+watch(titleDraft, (t) => {
+  if (editing.value && t !== (wiki.current?.title ?? '')) dirty.value = true
+})
+
 async function save() {
-  if (!editor.value) return
+  if (!editor.value || !wiki.current) return
   saving.value = true
+  saveError.value = ''
   try {
-    await wiki.savePage(activePath.value, titleDraft.value, editor.value.getHTML())
+    await wiki.savePage(activePath.value, titleDraft.value, editor.value.getHTML(), wiki.current.revision_id)
     await wiki.fetchPage(activePath.value)
     editing.value = false
+    dirty.value = false
+    conflict.value = false
     editor.value.setEditable(false)
+    wiki.fetchRecent().catch(() => {})
     if (showHistory.value) await wiki.fetchRevisions(activePath.value)
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 409) conflict.value = true
+    else saveError.value = 'Could not save — try again.'
   } finally {
     saving.value = false
   }
+}
+
+// Someone else saved while this person was editing. Their own text is still
+// in the editor; they choose to replace the other version with it, or to
+// give theirs up and read the other version.
+async function overwriteConflict() {
+  const mine = editor.value?.getHTML() ?? ''
+  const title = titleDraft.value
+  try {
+    await wiki.fetchPage(activePath.value)
+  } catch {
+    saveError.value = 'This page no longer exists.'
+    return
+  }
+  titleDraft.value = title
+  editor.value?.commands.setContent(mine)
+  await save()
+}
+async function discardAndReload() {
+  dirty.value = false
+  conflict.value = false
+  await loadPage(activePath.value)
 }
 
 function startNewPageAt(path: string) {
@@ -226,7 +277,13 @@ async function createPage() {
   const path = newPage.value.path.trim().replace(/^\/+|\/+$/g, '')
   const title = newPage.value.title.trim()
   if (!path || !title) return
-  await wiki.savePage(path, title, '')
+  newPageError.value = ''
+  try {
+    await wiki.savePage(path, title, '', 0)
+  } catch (e) {
+    newPageError.value = e instanceof ApiError && e.status === 409 ? `A page already exists at ${path}.` : 'Could not create the page.'
+    return
+  }
   showNewPage.value = false
   newPage.value = { path: '', title: '' }
   if (path === activePath.value) {
@@ -257,9 +314,57 @@ async function previewRevision(id: number) {
 
 async function restoreRevision() {
   if (!wiki.current || previewContent.value === undefined) return
-  await wiki.savePage(activePath.value, wiki.current.title, previewContent.value)
+  try {
+    await wiki.savePage(activePath.value, wiki.current.title, previewContent.value, wiki.current.revision_id)
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 409) {
+      await wiki.fetchRevisions(activePath.value)
+      saveError.value = 'Someone else changed this page just now — reopen History and try again.'
+    }
+    return
+  }
   await loadPage(activePath.value)
   showHistory.value = false
+  wiki.fetchRecent().catch(() => {})
+}
+
+// Asked before leaving while there are unsaved edits.
+function confirmLeave() {
+  return !(editing.value && dirty.value) || confirm('You have unsaved changes. Leave without saving?')
+}
+onBeforeRouteUpdate(() => confirmLeave())
+onBeforeRouteLeave(() => confirmLeave())
+function warnBeforeUnload(e: BeforeUnloadEvent) {
+  if (editing.value && dirty.value) e.preventDefault()
+}
+onMounted(() => {
+  window.addEventListener('beforeunload', warnBeforeUnload)
+  wiki.fetchRecent().catch(() => {})
+})
+onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnload))
+
+// "Engineering › Onboarding › Setup" above the title. A part is a link only
+// if there's really a page at that path (folders in the tree usually aren't).
+const crumbs = computed(() => {
+  const parts = activePath.value.split('/').filter(Boolean)
+  return parts.slice(0, -1).map((name, i) => {
+    const path = parts.slice(0, i + 1).join('/')
+    return { name, path, isPage: wiki.pages.some((p) => p.path === path) }
+  })
+})
+
+// Search snippets mark matches as <<word>>; turned into plain text/bold
+// pieces for the template, never into HTML.
+function snippetParts(s: string): { text: string; hit: boolean }[] {
+  return s
+    .split(/(<<.*?>>)/)
+    .filter(Boolean)
+    .map((t) => (t.startsWith('<<') && t.endsWith('>>') ? { text: t.slice(2, -2), hit: true } : { text: t, hit: false }))
+}
+
+async function removeAttachment(id: number, filename: string) {
+  if (!confirm(`Delete "${filename}"? If it's shown inside the page, that image will break.`)) return
+  await wiki.deleteAttachment(activePath.value, id)
 }
 
 function formatTime(iso: string) {
@@ -346,6 +451,9 @@ watch(
           <li v-for="r in searchResults" :key="r.id">
             <button class="link-btn" @click="goToSearchResult(r.path)">{{ r.title }}</button>
             <span class="hint-inline"> — {{ r.path }}</span>
+            <p v-if="r.snippet" class="snippet">
+              <template v-for="(part, i) in snippetParts(r.snippet)" :key="i"><mark v-if="part.hit">{{ part.text }}</mark><template v-else>{{ part.text }}</template></template>
+            </p>
           </li>
           <li v-if="searchResults.length === 0" class="hint">No matches.</li>
         </template>
@@ -356,6 +464,7 @@ watch(
           <input v-model="newPage.path" placeholder="category/sub/page" required />
           <input v-model="newPage.title" placeholder="Title" required />
           <button type="submit">Create</button>
+          <p v-if="newPageError" class="form-error">{{ newPageError }}</p>
         </form>
         <ul class="tree">
           <WikiTreeNode v-for="n in tree" :key="n.fullPath" :node="n" :active-path="activePath" />
@@ -365,14 +474,31 @@ watch(
     </aside>
 
     <main class="content">
-      <div v-if="!activePath" class="empty-state">
-        <p>Pick a page from the sidebar, or create a new one.</p>
+      <div v-if="!activePath" class="landing">
+        <h1>Wiki</h1>
+        <p class="hint">Pick a page from the sidebar, or create a new one.</p>
+        <template v-if="wiki.recent.length">
+          <h2>Recently changed</h2>
+          <ul class="recent-list">
+            <li v-for="r in wiki.recent" :key="r.id">
+              <router-link :to="`/portal/wiki/${r.path}`">{{ r.title }}</router-link>
+              <span class="hint-inline"> — {{ r.author }}, {{ formatTime(r.updated_at) }}</span>
+            </li>
+          </ul>
+        </template>
       </div>
       <div v-else-if="notFound" class="empty-state">
         <p>No page at "{{ activePath }}" yet.</p>
         <button @click="startNewPageAt(activePath)">Create it</button>
       </div>
       <div v-else-if="wiki.current">
+        <nav v-if="crumbs.length" class="crumbs" aria-label="Breadcrumb">
+          <template v-for="(c, i) in crumbs" :key="c.path">
+            <router-link v-if="c.isPage" :to="`/portal/wiki/${c.path}`">{{ c.name }}</router-link>
+            <span v-else>{{ c.name }}</span>
+            <span v-if="i < crumbs.length - 1" class="crumb-sep">›</span>
+          </template>
+        </nav>
         <div class="page-header">
           <input v-if="editing" v-model="titleDraft" class="title-input" />
           <h1 v-else>{{ wiki.current.title }}</h1>
@@ -394,7 +520,13 @@ watch(
           <button type="submit">Move</button>
           <button type="button" @click="showRename = false">Cancel</button>
         </form>
-        <p class="hint-inline">Last updated {{ formatTime(wiki.current.updated_at) }}</p>
+        <p class="hint-inline">Last updated {{ formatTime(wiki.current.updated_at) }} by {{ wiki.current.updated_by }}</p>
+        <div v-if="conflict" class="conflict-banner">
+          <p><strong>Someone else changed this page while you were editing.</strong> Your text is still here.</p>
+          <button type="button" @click="overwriteConflict">Replace their version with mine</button>
+          <button type="button" @click="discardAndReload">Discard mine, show theirs</button>
+        </div>
+        <p v-if="saveError" class="form-error">{{ saveError }}</p>
 
         <div v-if="showHistory" class="history-panel">
           <ul>
@@ -422,6 +554,7 @@ watch(
             <li v-for="a in wiki.attachments" :key="a.id">
               <a :href="`/api/portal/wiki/attachments/${a.id}`" target="_blank" rel="noopener">{{ a.filename }}</a>
               <span class="hint-inline"> ({{ Math.ceil(a.size_bytes / 1024) }} KB)</span>
+              <button v-if="wiki.current.can_write" type="button" class="link-btn" @click="removeAttachment(a.id, a.filename)">Delete</button>
             </li>
           </ul>
           <input ref="fileInput" type="file" :disabled="uploadBusy" @change="uploadFile" />
@@ -519,6 +652,52 @@ watch(
 .hint-inline {
   font-size: 0.82rem;
   color: var(--text-faint);
+}
+.snippet {
+  margin: 0.15rem 0 0.5rem;
+  font-size: 0.8rem;
+  color: var(--text-muted, inherit);
+}
+.snippet mark {
+  background: var(--accent-soft);
+  color: inherit;
+  border-radius: 2px;
+}
+.form-error {
+  margin: 0.4rem 0;
+  color: var(--danger-text);
+  font-size: 0.85rem;
+}
+.conflict-banner {
+  margin: 0.6rem 0;
+  padding: 0.6rem 0.9rem;
+  border-left: 3px solid var(--danger-text);
+  background: var(--accent-soft);
+}
+.conflict-banner p {
+  margin: 0 0 0.5rem;
+}
+.conflict-banner button {
+  margin-right: 0.5rem;
+}
+.crumbs {
+  margin-bottom: 0.3rem;
+  font-size: 0.85rem;
+  color: var(--text-muted, inherit);
+}
+.crumb-sep {
+  margin: 0 0.35rem;
+}
+.landing h2 {
+  margin-top: 1.5rem;
+  font-size: 1rem;
+}
+.recent-list {
+  list-style: none;
+  padding: 0;
+}
+.recent-list li {
+  margin: 0.4rem 0;
 }
 .history-panel {
   border: 1px solid var(--border);

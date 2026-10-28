@@ -3,6 +3,8 @@ package api
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net/http"
@@ -22,6 +24,12 @@ var inlineSafeContentTypes = map[string]bool{
 	"image/jpeg": true,
 	"image/gif":  true,
 	"image/webp": true,
+}
+
+func randomHex() string {
+	b := make([]byte, 6)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
 }
 
 func uploadContentType(fileBytes []byte) string {
@@ -62,6 +70,11 @@ type ListWikiAttachmentsOutput struct {
 	Body struct {
 		Attachments []WikiAttachment `json:"attachments"`
 	}
+}
+
+type DeleteWikiAttachmentInput struct {
+	SessionToken string `cookie:"itp_employee_session"`
+	ID           int    `path:"id"`
 }
 
 type DownloadWikiAttachmentInput struct {
@@ -114,7 +127,9 @@ func registerAttachments(api huma.API, s *Server) {
 			return nil, huma.Error400BadRequest(fmt.Sprintf("file too large — max %d MB", maxAttachmentSize/1024/1024))
 		}
 		filename := data.File.Filename
-		key := fmt.Sprintf("wiki/%d/%s", pageID, filename)
+		// A random part in the key: two files with the same name (every pasted
+		// screenshot is "image.png") must not overwrite each other's bytes.
+		key := fmt.Sprintf("wiki/%d/%s-%s", pageID, randomHex(), filename)
 		if err := s3.Upload(ctx, key, bytes.NewReader(fileBytes), uploadContentType(fileBytes)); err != nil {
 			return nil, internalError("upload attachment", err)
 		}
@@ -172,6 +187,47 @@ func registerAttachments(api huma.API, s *Server) {
 			}
 			out.Body.Attachments = append(out.Body.Attachments, a)
 		}
+		return out, nil
+	})
+
+	huma.Register(api, huma.Operation{
+		OperationID: "delete-wiki-attachment",
+		Method:      "DELETE",
+		Path:        "/api/portal/wiki/attachments/{id}",
+		Summary:     "Delete a file attached to a wiki page",
+	}, func(ctx context.Context, in *DeleteWikiAttachmentInput) (*ActionOutput, error) {
+		username, err := s.requireEmployeeAuth(ctx, in.SessionToken)
+		if err != nil {
+			return nil, err
+		}
+		group, _ := s.employeeGroup(ctx, username)
+
+		var pageID int
+		var key string
+		err = s.DB.QueryRow(ctx, `SELECT page_id, s3_key FROM wiki_attachments WHERE id = $1`, in.ID).Scan(&pageID, &key)
+		if err != nil {
+			return nil, huma.Error404NotFound("no such attachment")
+		}
+		canWrite, err := s.wikiPageAccess(ctx, pageID, group, false, true)
+		if err != nil {
+			return nil, internalError("check access", err)
+		}
+		if !canWrite {
+			return nil, huma.Error403Forbidden("you don't have write access to this page")
+		}
+		if _, err := s.DB.Exec(ctx, `DELETE FROM wiki_attachments WHERE id = $1`, in.ID); err != nil {
+			return nil, internalError("delete attachment", err)
+		}
+		// Files uploaded before keys were made unique can share a key; only
+		// remove the stored file once nothing else points at it.
+		var stillUsed bool
+		if err := s.DB.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM wiki_attachments WHERE s3_key = $1)`, key).Scan(&stillUsed); err == nil && !stillUsed {
+			if s3, available, err := s.wikiS3Client(ctx); err == nil && available {
+				_ = s3.Delete(ctx, key)
+			}
+		}
+		out := &ActionOutput{}
+		out.Body.Success = true
 		return out, nil
 	})
 

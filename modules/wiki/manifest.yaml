@@ -8,7 +8,7 @@ description: >-
   platform's own database rather than running one of its own; creates its
   tables on install if they don't already exist.
 category: collaboration
-version: "1.0.3"
+version: "1.0.4"
 compose_file: docker-compose.yaml
 needs_database: true
 soft_dependencies:

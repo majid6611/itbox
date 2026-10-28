@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { api } from '../api/client'
-import type { WikiAttachment, WikiPage, WikiPageSummary, WikiRevision } from '../api/types'
+import type { WikiAttachment, WikiPage, WikiPageSummary, WikiRecent, WikiRevision } from '../api/types'
 
 export const useWikiStore = defineStore('wiki', {
   state: () => ({
@@ -8,6 +8,7 @@ export const useWikiStore = defineStore('wiki', {
     current: null as WikiPage | null,
     revisions: [] as WikiRevision[],
     attachments: [] as WikiAttachment[],
+    recent: [] as WikiRecent[],
     loading: false,
   }),
   actions: {
@@ -23,10 +24,21 @@ export const useWikiStore = defineStore('wiki', {
     async fetchPage(path: string) {
       this.current = await api.get<WikiPage>(`/portal/wiki/page?path=${encodeURIComponent(path)}`)
     },
-    async savePage(path: string, title: string, content: string) {
-      const res = await api.post<{ success: boolean; id: number }>('/portal/wiki/page', { path, title, content })
+    // baseRevision: 0 creates a new page (refused with 409 if the path is
+    // taken); the page's revision_id edits it (409 if someone saved since).
+    async savePage(path: string, title: string, content: string, baseRevision?: number) {
+      const body = { path, title, content, ...(baseRevision !== undefined ? { base_revision: baseRevision } : {}) }
+      const res = await api.post<{ success: boolean; id: number; revision_id: number }>('/portal/wiki/page', body)
       await this.fetchPages()
       return res.id
+    },
+    async fetchRecent() {
+      const res = await api.get<{ pages: WikiRecent[] }>('/portal/wiki/recent')
+      this.recent = res.pages ?? []
+    },
+    async deleteAttachment(path: string, id: number) {
+      await api.delete(`/portal/wiki/attachments/${id}`)
+      await this.fetchAttachments(path)
     },
     async fetchRevisions(path: string) {
       const res = await api.get<{ revisions: WikiRevision[] }>(`/portal/wiki/page/revisions?path=${encodeURIComponent(path)}`)

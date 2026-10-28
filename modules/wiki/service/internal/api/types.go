@@ -12,6 +12,18 @@ type WikiPageSummary struct {
 	ID    int    `json:"id"`
 	Path  string `json:"path"`
 	Title string `json:"title"`
+	// Snippet is set only on search results: the matching text, with the
+	// matched words wrapped in << >>.
+	Snippet string `json:"snippet,omitempty"`
+}
+
+// WikiRecent is one entry of the "recently changed" list.
+type WikiRecent struct {
+	ID        int    `json:"id"`
+	Path      string `json:"path"`
+	Title     string `json:"title"`
+	Author    string `json:"author"`
+	UpdatedAt string `json:"updated_at"`
 }
 
 type WikiPage struct {
@@ -21,6 +33,11 @@ type WikiPage struct {
 	Content   string `json:"content"`
 	CanWrite  bool   `json:"can_write"`
 	UpdatedAt string `json:"updated_at"`
+	UpdatedBy string `json:"updated_by"`
+	// RevisionID is the revision this content came from. A save sends it
+	// back as base_revision so the server can tell if someone else saved
+	// in the meantime.
+	RevisionID int `json:"revision_id"`
 }
 
 type WikiRevision struct {

@@ -100,25 +100,56 @@ func (s *Server) wikiPageAccess(ctx context.Context, pageID int, userGroup strin
 	}
 	defer rows.Close()
 
-	hasAnyRule := false
+	var rules []WikiPermissionRule
 	for rows.Next() {
-		hasAnyRule = true
-		var group, access string
-		if err := rows.Scan(&group, &access); err != nil {
+		var r WikiPermissionRule
+		if err := rows.Scan(&r.Group, &r.Access); err != nil {
 			return false, err
 		}
-		if group != userGroup {
-			continue
-		}
-		if needWrite {
-			if access == "write" {
-				return true, nil
-			}
-			continue
-		}
-		return true, nil // any rule for this group grants at least read
+		rules = append(rules, r)
 	}
-	return !hasAnyRule, nil
+	if err := rows.Err(); err != nil {
+		return false, err
+	}
+	return ruleAllows(rules, userGroup, needWrite), nil
+}
+
+// ruleAllows is the permission rule itself: a page with no rules is open to
+// everyone; otherwise only a group with a rule at or above the requested
+// level gets in (any rule grants read, only "write" grants write).
+func ruleAllows(rules []WikiPermissionRule, userGroup string, needWrite bool) bool {
+	if len(rules) == 0 {
+		return true
+	}
+	for _, r := range rules {
+		if r.Group != userGroup {
+			continue
+		}
+		if !needWrite || r.Access == "write" {
+			return true
+		}
+	}
+	return false
+}
+
+// allRules loads every page's permission rules in one query, so listing or
+// searching many pages doesn't cost one query per page.
+func (s *Server) allRules(ctx context.Context) (map[int][]WikiPermissionRule, error) {
+	rows, err := s.DB.Query(ctx, `SELECT page_id, group_name, access FROM wiki_permissions`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make(map[int][]WikiPermissionRule)
+	for rows.Next() {
+		var id int
+		var r WikiPermissionRule
+		if err := rows.Scan(&id, &r.Group, &r.Access); err != nil {
+			return nil, err
+		}
+		out[id] = append(out[id], r)
+	}
+	return out, rows.Err()
 }
 
 // cleanPagePath normalises a page path and rejects ones that would make a
