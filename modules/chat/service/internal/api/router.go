@@ -22,9 +22,12 @@ const employeeSessionCookieName = "itp_employee_session"
 type Server struct {
 	DB  *pgxpool.Pool
 	Hub *hub.Hub
+
+	limiter *rateLimiter
 }
 
 func NewRouter(s *Server) http.Handler {
+	s.limiter = newRateLimiter()
 	router := chi.NewMux()
 	api := humachi.New(router, huma.DefaultConfig("Chat Module API", "1.0.0"))
 
@@ -44,6 +47,7 @@ func NewRouter(s *Server) http.Handler {
 	registerMessages(api, s)
 	registerAttachments(api, s)
 	registerEditDelete(api, s)
+	registerReadState(api, s)
 
 	// The WebSocket upgrade isn't a huma operation — it needs the raw
 	// http.ResponseWriter/Request the coder/websocket library upgrades

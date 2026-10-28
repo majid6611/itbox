@@ -2,15 +2,19 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/jackc/pgx/v5"
 
 	"it-platform/chat/internal/directory"
 	"it-platform/chat/internal/hub"
 )
+
+// pageSize is how many messages one history page returns; the client treats
+// a shorter page as "no older messages left".
+const pageSize = 50
 
 type GetMessagesInput struct {
 	SessionToken string `cookie:"itp_employee_session"`
@@ -22,6 +26,8 @@ type GetMessagesInput struct {
 	// (reconnect backfill). This, not the WebSocket, is the actual
 	// delivery guarantee — see the package doc on hub for why.
 	After int64 `query:"after"`
+	// Before is the scroll-up cursor: the 50 messages older than this id.
+	Before int64 `query:"before"`
 }
 
 type GetMessagesOutput struct {
@@ -89,7 +95,7 @@ func registerMessages(api huma.API, s *Server) {
 			}
 		}
 
-		messages, err := s.fetchMessages(ctx, username, in.Group, in.With, in.CustomGroup, in.After)
+		messages, err := s.fetchMessages(ctx, username, in.Group, in.With, in.CustomGroup, in.After, in.Before)
 		if err != nil {
 			return nil, internalError("load messages", err)
 		}
@@ -111,6 +117,12 @@ func registerMessages(api huma.API, s *Server) {
 		content := strings.TrimSpace(in.Body.Content)
 		if content == "" {
 			return nil, huma.Error400BadRequest("message can't be empty")
+		}
+		if err := checkLength(content); err != nil {
+			return nil, err
+		}
+		if err := s.checkRate(username); err != nil {
+			return nil, err
 		}
 		if targetCount(in.Body.GroupName, in.Body.RecipientUsername, in.Body.CustomGroupID) != 1 {
 			return nil, huma.Error400BadRequest("specify exactly one of group_name, recipient_username, or custom_group_id")
@@ -153,35 +165,38 @@ func registerMessages(api huma.API, s *Server) {
 // attachments in one follow-up query rather than one per message. Caller
 // must have already checked group membership for a private-group target —
 // this assumes access is already allowed.
-func (s *Server) fetchMessages(ctx context.Context, me, group, with string, customGroup int64, after int64) ([]MessageOut, error) {
+func (s *Server) fetchMessages(ctx context.Context, me, group, with string, customGroup int64, after, before int64) ([]MessageOut, error) {
 	const cols = "id, sender_username, group_name, recipient_username, custom_group_id, content, created_at, edited_at, deleted_at"
-	var rows pgx.Rows
-	var err error
+
+	var where string
+	args := []any{}
 	switch {
-	case group != "" && after > 0:
-		rows, err = s.DB.Query(ctx, `SELECT `+cols+` FROM chat_messages WHERE group_name = $1 AND id > $2 ORDER BY id ASC LIMIT 500`, group, after)
 	case group != "":
-		rows, err = s.DB.Query(ctx, `SELECT `+cols+` FROM (
-			SELECT `+cols+` FROM chat_messages WHERE group_name = $1 ORDER BY id DESC LIMIT 50
-		) recent ORDER BY id ASC`, group)
-	case customGroup != 0 && after > 0:
-		rows, err = s.DB.Query(ctx, `SELECT `+cols+` FROM chat_messages WHERE custom_group_id = $1 AND id > $2 ORDER BY id ASC LIMIT 500`, customGroup, after)
+		where, args = "group_name = $1", append(args, group)
 	case customGroup != 0:
-		rows, err = s.DB.Query(ctx, `SELECT `+cols+` FROM (
-			SELECT `+cols+` FROM chat_messages WHERE custom_group_id = $1 ORDER BY id DESC LIMIT 50
-		) recent ORDER BY id ASC`, customGroup)
-	case after > 0:
-		rows, err = s.DB.Query(ctx, `
-			SELECT `+cols+` FROM chat_messages
-			WHERE ((sender_username = $1 AND recipient_username = $2) OR (sender_username = $2 AND recipient_username = $1)) AND id > $3
-			ORDER BY id ASC LIMIT 500`, me, with, after)
+		where, args = "custom_group_id = $1", append(args, customGroup)
 	default:
-		rows, err = s.DB.Query(ctx, `SELECT `+cols+` FROM (
-			SELECT `+cols+` FROM chat_messages
-			WHERE (sender_username = $1 AND recipient_username = $2) OR (sender_username = $2 AND recipient_username = $1)
-			ORDER BY id DESC LIMIT 50
-		) recent ORDER BY id ASC`, me, with)
+		where = "((sender_username = $1 AND recipient_username = $2) OR (sender_username = $2 AND recipient_username = $1))"
+		args = append(args, me, with)
 	}
+	n := len(args) + 1
+
+	var query string
+	switch {
+	case after > 0:
+		query = fmt.Sprintf(`SELECT `+cols+` FROM chat_messages WHERE %s AND id > $%d ORDER BY id ASC LIMIT 500`, where, n)
+		args = append(args, after)
+	case before > 0:
+		query = fmt.Sprintf(`SELECT `+cols+` FROM (
+			SELECT `+cols+` FROM chat_messages WHERE %s AND id < $%d ORDER BY id DESC LIMIT %d
+		) older ORDER BY id ASC`, where, n, pageSize)
+		args = append(args, before)
+	default:
+		query = fmt.Sprintf(`SELECT `+cols+` FROM (
+			SELECT `+cols+` FROM chat_messages WHERE %s ORDER BY id DESC LIMIT %d
+		) recent ORDER BY id ASC`, where, pageSize)
+	}
+	rows, err := s.DB.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}

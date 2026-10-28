@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { usePortalStore } from '../../stores/portal'
 import { usePortalModulesStore } from '../../stores/portalModules'
 import { useChatStore, type TargetKind } from '../../stores/chat'
@@ -14,6 +14,17 @@ const sending = ref(false)
 const fileInput = ref<HTMLInputElement | null>(null)
 const threadEl = ref<HTMLElement | null>(null)
 const moduleUnavailable = ref(false)
+const sendError = ref('')
+
+// The API's error body is JSON ({"detail": "..."}); show just the sentence.
+function errorText(e: unknown): string {
+  const raw = e instanceof Error ? e.message : ''
+  try {
+    return JSON.parse(raw).detail || 'Could not send'
+  } catch {
+    return raw || 'Could not send'
+  }
+}
 
 // Emoji themselves need no special support at all — messages are plain
 // UTF-8 text (verified end to end: type one, it round-trips through
@@ -130,8 +141,12 @@ const addableUsers = computed(() => {
 function keyFor(kind: TargetKind, name: string | number) {
   return `${kind}:${name}`
 }
-function isUnread(kind: TargetKind, name: string | number) {
-  return !!chat.unread[keyFor(kind, name)]
+function unreadCount(kind: TargetKind, name: string | number) {
+  return chat.unread[keyFor(kind, name)] ?? 0
+}
+function unreadLabel(kind: TargetKind, name: string | number) {
+  const n = unreadCount(kind, name)
+  return n > 99 ? '99+' : String(n)
 }
 
 async function selectTarget(kind: TargetKind, name: string | number) {
@@ -151,10 +166,38 @@ function scrollToBottom() {
 
 // New messages (live or from switching threads) should always pull the
 // view down — a chat that doesn't auto-scroll reads as broken.
-watch(messages, async () => {
-  await nextTick()
-  scrollToBottom()
-})
+// Keyed on the newest message only, so loading older history (which only
+// prepends) and edits don't yank the view to the bottom.
+watch(
+  () => messages.value[messages.value.length - 1]?.id,
+  async () => {
+    await nextTick()
+    scrollToBottom()
+  },
+)
+
+const hasOlder = computed(() => !!active.value && !!chat.hasMore[keyFor(active.value.kind, active.value.name)])
+const loadingOlder = ref(false)
+async function loadOlder() {
+  if (!active.value || !threadEl.value || loadingOlder.value) return
+  loadingOlder.value = true
+  const el = threadEl.value
+  const before = el.scrollHeight - el.scrollTop
+  try {
+    await chat.fetchOlder(active.value.kind, active.value.name)
+    await nextTick()
+    // Keep the message the reader was looking at where it was.
+    el.scrollTop = el.scrollHeight - before
+  } finally {
+    loadingOlder.value = false
+  }
+}
+
+// A background tab counts new messages as unread; coming back to the tab
+// is what reads them.
+function onVisible() {
+  if (document.visibilityState === 'visible' && chat.activeKey) chat.markRead(chat.activeKey)
+}
 
 async function send() {
   const text = draft.value.trim()
@@ -162,8 +205,14 @@ async function send() {
   draft.value = ''
   showEmoji.value = false
   sending.value = true
+  sendError.value = ''
   try {
     await chat.sendMessage(active.value.kind, active.value.name, text)
+  } catch (e) {
+    // Put the text back — a refused send (too long, sending too fast) must
+    // not eat what the person typed.
+    draft.value = text
+    sendError.value = errorText(e)
   } finally {
     sending.value = false
   }
@@ -175,8 +224,11 @@ async function pickFile(e: Event) {
   input.value = ''
   if (!file || !active.value) return
   sending.value = true
+  sendError.value = ''
   try {
     await chat.sendFile(active.value.kind, active.value.name, file, '')
+  } catch (e) {
+    sendError.value = errorText(e)
   } finally {
     sending.value = false
   }
@@ -208,9 +260,15 @@ function formatTime(iso: string) {
   return new Date(iso).toLocaleString()
 }
 
+onUnmounted(() => {
+  document.removeEventListener('visibilitychange', onVisible)
+  chat.clearActive()
+})
+
 onMounted(async () => {
+  document.addEventListener('visibilitychange', onVisible)
   try {
-    await Promise.all([chat.fetchChannels(), chat.fetchUsers(), chat.fetchCustomGroups()])
+    await Promise.all([chat.fetchChannels(), chat.fetchUsers(), chat.fetchCustomGroups(), chat.fetchUnread()])
   } catch {
     moduleUnavailable.value = true
     return
@@ -235,7 +293,7 @@ onMounted(async () => {
       <ul class="target-list">
         <li v-for="c in chat.channels" :key="c">
           <button :class="{ active: active?.kind === 'group' && active.name === c }" @click="selectTarget('group', c)">
-            <span v-if="isUnread('group', c)" class="dot unread"></span>
+            <span v-if="unreadCount('group', c)" class="unread-count">{{ unreadLabel('group', c) }}</span>
             # {{ c }}
           </button>
         </li>
@@ -257,7 +315,7 @@ onMounted(async () => {
       <ul class="target-list">
         <li v-for="g in chat.customGroups" :key="g.id">
           <button :class="{ active: active?.kind === 'custom' && active.name === g.id }" @click="selectTarget('custom', g.id)">
-            <span v-if="isUnread('custom', g.id)" class="dot unread"></span>
+            <span v-if="unreadCount('custom', g.id)" class="unread-count">{{ unreadLabel('custom', g.id) }}</span>
             🔒 {{ g.name }}
           </button>
         </li>
@@ -267,7 +325,7 @@ onMounted(async () => {
       <ul class="target-list">
         <li v-for="u in chat.users" :key="u.username">
           <button :class="{ active: active?.kind === 'dm' && active.name === u.username }" @click="selectTarget('dm', u.username)">
-            <span v-if="isUnread('dm', u.username)" class="dot unread"></span>
+            <span v-if="unreadCount('dm', u.username)" class="unread-count">{{ unreadLabel('dm', u.username) }}</span>
             <span class="dot" :class="{ online: u.online }"></span>
             {{ u.username }}
           </button>
@@ -308,6 +366,9 @@ onMounted(async () => {
         <p v-else-if="active.kind === 'custom' && addableUsers.length === 0" class="hint">Everyone's already in this group.</p>
 
         <div ref="threadEl" class="thread">
+          <button v-if="hasOlder" type="button" class="load-older" :disabled="loadingOlder" @click="loadOlder">
+            {{ loadingOlder ? 'Loading…' : 'Load older messages' }}
+          </button>
           <div v-for="m in messages" :key="m.id" class="message" :class="{ mine: m.sender_username === portal.username }">
             <div class="message-meta">
               <strong>{{ m.sender_username }}</strong>
@@ -319,7 +380,7 @@ onMounted(async () => {
             </template>
             <template v-else-if="editingId === m.id">
               <form class="edit-form" @submit.prevent="saveEdit">
-                <input v-model="editDraft" type="text" autofocus />
+                <input v-model="editDraft" type="text" maxlength="4000" autofocus />
                 <button type="submit" :disabled="!editDraft.trim()">Save</button>
                 <button type="button" @click="cancelEdit">Cancel</button>
               </form>
@@ -349,11 +410,12 @@ onMounted(async () => {
         <div v-if="showEmoji" class="emoji-picker">
           <button v-for="e in EMOJI" :key="e" type="button" class="emoji-btn" @click="insertEmoji(e)">{{ e }}</button>
         </div>
+        <p v-if="sendError" class="send-error">{{ sendError }}</p>
         <form class="composer" @submit.prevent="send">
           <button type="button" :disabled="sending" @click="showEmoji = !showEmoji">😊</button>
           <button type="button" :disabled="sending" @click="fileInput?.click()">📎</button>
           <input ref="fileInput" type="file" hidden @change="pickFile" />
-          <input ref="draftInput" v-model="draft" type="text" placeholder="Type a message…" :disabled="sending" />
+          <input ref="draftInput" v-model="draft" type="text" maxlength="4000" placeholder="Type a message…" :disabled="sending" />
           <button type="submit" :disabled="sending || !draft.trim()">Send</button>
         </form>
       </template>
@@ -449,8 +511,26 @@ onMounted(async () => {
 .dot.online {
   background: var(--success-text);
 }
-.dot.unread {
+.unread-count {
+  min-width: 1.1rem;
+  padding: 0 0.3rem;
+  border-radius: 999px;
   background: var(--accent);
+  color: #fff;
+  font-size: 0.7rem;
+  line-height: 1.1rem;
+  text-align: center;
+  flex-shrink: 0;
+}
+.load-older {
+  align-self: center;
+  margin-bottom: 0.5rem;
+  font-size: 0.85rem;
+}
+.send-error {
+  margin: 0 1rem 0.25rem;
+  color: var(--danger-text, #b42318);
+  font-size: 0.85rem;
 }
 .thread-pane {
   flex: 1;

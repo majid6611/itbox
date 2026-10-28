@@ -76,6 +76,12 @@ func registerAttachments(api huma.API, s *Server) {
 			return nil, err
 		}
 		data := in.RawBody.Data()
+		if err := checkLength(data.Caption); err != nil {
+			return nil, err
+		}
+		if err := s.checkRate(username); err != nil {
+			return nil, err
+		}
 		if targetCount(data.GroupName, data.RecipientUsername, data.CustomGroupID) != 1 {
 			return nil, huma.Error400BadRequest("specify exactly one of group_name, recipient_username, or custom_group_id")
 		}

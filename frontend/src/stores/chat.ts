@@ -4,6 +4,9 @@ import type { ChatCustomGroup, ChatEvent, ChatMessage, ChatUser } from '../api/t
 
 export type TargetKind = 'group' | 'dm' | 'custom'
 
+// Matches the server's history page size — a shorter page means no more.
+const PAGE_SIZE = 50
+
 // A DM thread, an LDAP-group channel, and a private custom group are all
 // just "a target" — this key scheme is how the store tells them apart
 // without needing three parallel sets of state everywhere.
@@ -32,12 +35,16 @@ export const useChatStore = defineStore('chat', {
     // component, so the WS handler below knows whether an incoming
     // message should be marked unread or is already being looked at.
     activeKey: null as string | null,
-    unread: {} as Record<string, boolean>,
+    // Unread count per thread. Loaded from the server (read state is stored
+    // there, so it survives a reload) and bumped live by the WS handler.
+    unread: {} as Record<string, number>,
+    // Whether a thread may have older messages than the ones loaded.
+    hasMore: {} as Record<string, boolean>,
     ws: null as WebSocket | null,
     wsConnected: false,
   }),
   getters: {
-    hasUnread: (state) => Object.values(state.unread).some(Boolean),
+    hasUnread: (state) => Object.values(state.unread).some((n) => n > 0),
   },
   actions: {
     async fetchChannels() {
@@ -61,9 +68,71 @@ export const useChatStore = defineStore('chat', {
       await this.fetchCustomGroups()
     },
     async fetchHistory(kind: TargetKind, name: string | number) {
-      const param = kind === 'group' ? `group=${encodeURIComponent(name)}` : kind === 'custom' ? `custom_group=${name}` : `with=${encodeURIComponent(String(name))}`
-      const res = await api.get<{ messages: ChatMessage[] }>(`/portal/chat/messages?${param}`)
-      this.messagesByTarget[targetKey(kind, name)] = res.messages ?? []
+      const res = await api.get<{ messages: ChatMessage[] }>(`/portal/chat/messages?${this.targetParam(kind, name)}`)
+      const key = targetKey(kind, name)
+      this.messagesByTarget[key] = res.messages ?? []
+      this.hasMore[key] = (res.messages?.length ?? 0) >= PAGE_SIZE
+    },
+    targetParam(kind: TargetKind, name: string | number) {
+      return kind === 'group' ? `group=${encodeURIComponent(name)}` : kind === 'custom' ? `custom_group=${name}` : `with=${encodeURIComponent(String(name))}`
+    },
+    // Scroll-up paging: the page of messages just older than what's loaded.
+    async fetchOlder(kind: TargetKind, name: string | number) {
+      const key = targetKey(kind, name)
+      const current = this.messagesByTarget[key] ?? []
+      if (current.length === 0) return
+      const res = await api.get<{ messages: ChatMessage[] }>(
+        `/portal/chat/messages?${this.targetParam(kind, name)}&before=${current[0].id}`,
+      )
+      const older = res.messages ?? []
+      this.messagesByTarget[key] = [...older, ...current]
+      this.hasMore[key] = older.length >= PAGE_SIZE
+    },
+    async fetchUnread() {
+      const res = await api.get<{ counts: Record<string, number> }>('/portal/chat/unread')
+      this.unread = res.counts ?? {}
+    },
+    // Tell the server a thread is read up to its newest loaded message, and
+    // clear the local count. Read state is stored per person on the server,
+    // so another tab or device (and a reload) agree on it.
+    markRead(key: string) {
+      this.unread[key] = 0
+      const list = this.messagesByTarget[key]
+      const last = list?.[list.length - 1]
+      if (last) api.post('/portal/chat/read', { key, message_id: last.id }).catch(() => {})
+    },
+    // After a dropped connection: fetch whatever was sent while we were
+    // away for every thread already loaded (the live push is only a
+    // courtesy — Postgres is the source of truth), and refresh unread
+    // counts, group list and presence, which may all have changed too.
+    async backfill() {
+      await Promise.all([
+        ...Object.entries(this.messagesByTarget).map(async ([key, list]) => {
+          const last = list[list.length - 1]
+          if (!last) return
+          const i = key.indexOf(':')
+          const kind = key.slice(0, i) as TargetKind
+          const name = key.slice(i + 1)
+          const res = await api.get<{ messages: ChatMessage[] }>(
+            `/portal/chat/messages?${this.targetParam(kind, name)}&after=${last.id}`,
+          )
+          for (const m of res.messages ?? []) this.addMessage(m)
+        }),
+        this.fetchUnread(),
+        this.fetchCustomGroups(),
+        this.fetchUsers(),
+      ]).catch(() => {})
+      if (this.activeKey) this.markRead(this.activeKey)
+    },
+    // The one place a new message enters a thread. Skips ids already there,
+    // since a backfill and a live push can both deliver the same message.
+    addMessage(m: ChatMessage) {
+      const key = keyForMessage(m, this.myUsername)
+      if (!this.messagesByTarget[key]) this.messagesByTarget[key] = []
+      const list = this.messagesByTarget[key]
+      if (list.some((x) => x.id === m.id)) return false
+      list.push(m)
+      return true
     },
     async sendMessage(kind: TargetKind, name: string | number, content: string) {
       const body =
@@ -104,7 +173,13 @@ export const useChatStore = defineStore('chat', {
     // tells the WS handler this is now the one being looked at.
     setActive(kind: TargetKind, name: string | number) {
       this.activeKey = targetKey(kind, name)
-      this.unread[this.activeKey] = false
+      this.markRead(this.activeKey)
+    },
+
+    // The chat page was left — nothing is "the open thread" any more, so
+    // new messages count as unread instead of being marked read unseen.
+    clearActive() {
+      this.activeKey = null
     },
 
     // Browser push notifications are opt-in and only for when the tab is
@@ -135,6 +210,7 @@ export const useChatStore = defineStore('chat', {
       const ws = new WebSocket(`${proto}//${window.location.host}/api/portal/chat/ws`)
       ws.onopen = () => {
         this.wsConnected = true
+        this.backfill()
       }
       ws.onclose = () => {
         this.wsConnected = false
@@ -160,14 +236,15 @@ export const useChatStore = defineStore('chat', {
         } else if (event.type === 'message' && event.message) {
           const m = event.message
           const key = keyForMessage(m, this.myUsername)
-          if (!this.messagesByTarget[key]) this.messagesByTarget[key] = []
-          this.messagesByTarget[key].push(m)
-          // A message for a thread you're not currently looking at should
-          // be visible in the sidebar without needing a refresh to notice
-          // it happened — that's the whole point of "live", not just
-          // delivering bytes into memory nobody's told to look at.
-          if (key !== this.activeKey && m.sender_username !== this.myUsername) {
-            this.unread[key] = true
+          if (!this.addMessage(m)) return
+          if (m.sender_username === this.myUsername) return
+          // A message in the thread you're looking at is read on arrival; in
+          // any other thread (or a background tab) it's unread, visible in
+          // the sidebar without needing a refresh to notice.
+          if (key === this.activeKey && document.visibilityState === 'visible') {
+            this.markRead(key)
+          } else {
+            this.unread[key] = (this.unread[key] ?? 0) + 1
             this.notifyNewMessage(m)
           }
         } else if (event.type === 'message_updated' && event.message) {

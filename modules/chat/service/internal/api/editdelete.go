@@ -44,6 +44,9 @@ func registerEditDelete(api huma.API, s *Server) {
 		if content == "" {
 			return nil, huma.Error400BadRequest("message can't be empty")
 		}
+		if err := checkLength(content); err != nil {
+			return nil, err
+		}
 
 		msg, err := s.loadMessageForMutation(ctx, in.ID, username)
 		if err != nil {
